@@ -1,1 +1,25 @@
-pyTelegramBotAPI
+# Telegram bot (existing)
+pyTelegramBotAPI>=4.14
+
+# Trading & Exchange
+ccxt[async]>=4.2.0
+
+# Technical Analysis
+pandas>=2.1.0
+pandas-ta>=0.3.14b
+
+# HTTP & Feeds
+aiohttp>=3.9.0
+feedparser>=6.0.10
+
+# AI Sentiment Analysis
+anthropic>=0.40.0
+
+# Console Dashboard
+rich>=13.7.0
+
+# Database
+aiosqlite>=0.19.0
+
+# Environment
+python-dotenv>=1.0.0
