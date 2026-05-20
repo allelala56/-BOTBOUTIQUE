@@ -1,11 +1,11 @@
 services:
-  # Telegram boutique bot (existing)
-  - type: web
-    name: telegram-bot-shop
+  # Bot Telegram boutique (existant)
+  - type: worker
+    name: telegram-shop-bot
     env: python
     plan: free
-    buildCommand: "pip install -r requirements.txt"
-    startCommand: "python bot.py"
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot.py
     envVars:
       - key: BOT_TOKEN
         sync: false
@@ -16,18 +16,16 @@ services:
 
   # Machine à Cache — Trading Bot
   - type: worker
-    name: machine-a-cache
+    name: machine-a-cache-bot
     env: python
     plan: starter
-    buildCommand: "pip install -r requirements.txt"
-    startCommand: "python -m trading_bot.main"
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m trading_bot.main
     envVars:
       - key: INITIAL_CAPITAL
         value: "10000"
       - key: PAPER_TRADING
         value: "true"
-      - key: EXCHANGE_ID
-        value: "binance"
       - key: BINANCE_API_KEY
         sync: false
       - key: BINANCE_SECRET
@@ -40,15 +38,13 @@ services:
         sync: false
       - key: TELEGRAM_CHAT_ID
         sync: false
-      - key: SYMBOLS
-        value: "BTC/USDT,ETH/USDT,SOL/USDT,BNB/USDT,XRP/USDT,ADA/USDT,DOGE/USDT,AVAX/USDT,MATIC/USDT,DOT/USDT"
       - key: MAX_POSITION_PCT
         value: "0.02"
       - key: MAX_DAILY_LOSS_PCT
         value: "0.03"
       - key: MAX_DRAWDOWN_PCT
         value: "0.10"
-      - key: SCAN_INTERVAL
-        value: "1.0"
-      - key: SENTIMENT_INTERVAL
-        value: "300"
+      - key: MAX_CONCURRENT_POSITIONS
+        value: "10"
+      - key: SIGNAL_THRESHOLD
+        value: "0.6"

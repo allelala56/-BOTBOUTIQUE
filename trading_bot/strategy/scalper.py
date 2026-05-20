@@ -1,86 +1,69 @@
-"""
-Machine à Cache — core scalping strategy.
-Scans all symbols every SCAN_INTERVAL seconds, fires trades on valid signals.
-"""
+"""Stratégie principale — Machine à Cache HF Scalper"""
 import asyncio
 import logging
 import time
 
-from trading_bot.analysis.sentiment import analyze_sentiment
-from trading_bot.analysis.signals import evaluate
 from trading_bot.config import config
-from trading_bot.execution.order_manager import OrderManager
-from trading_bot.monitoring.database import TradeDB
+from trading_bot.data.price_fetcher import get_ohlcv, get_spread_pct, LAST_PRICES
+from trading_bot.analysis.technical import compute_signal
+from trading_bot.analysis.signals import compute_final_signal
+from trading_bot.execution.paper_trader import open_trade, check_and_close_positions
+from trading_bot.strategy.risk_manager import risk_manager
 
-log = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
+
+# Evite d'ouvrir 2 positions sur le même symbole en même temps
+_symbol_cooldowns: dict = {}
+SYMBOL_COOLDOWN = 10   # secondes entre 2 trades sur le même symbole
 
 
-class Scalper:
-    def __init__(self, order_manager: OrderManager, db: TradeDB):
-        self.om = order_manager
-        self.db = db
-        self.running = False
-        self.cycle = 0
+async def _scan_symbol(symbol: str):
+    """Analyse un symbole et déclenche un trade si signal fort."""
+    now = time.time()
+    if now < _symbol_cooldowns.get(symbol, 0):
+        return
 
-    async def _update_sentiment(self) -> None:
-        score, label = await analyze_sentiment()
-        log.info("[SENTIMENT] score=%+.3f label=%s", score, label)
+    spread = get_spread_pct(symbol)
+    if spread > config.max_spread_pct:
+        return
 
-    async def _scan_symbol(self, symbol: str) -> None:
+    ohlcv = get_ohlcv(symbol)
+    if len(ohlcv) < 30:
+        return
+
+    tech = compute_signal(symbol, ohlcv)
+    if tech is None:
+        return
+
+    signal = compute_final_signal(tech)
+    if signal is None:
+        return
+
+    side = "BUY" if signal.direction > 0 else "SELL"
+    pos = await open_trade(symbol, side, signal.final_score)
+    if pos:
+        _symbol_cooldowns[symbol] = now + SYMBOL_COOLDOWN
+
+
+async def scalper_loop():
+    """Boucle principale : scan de tous les marchés toutes les N secondes."""
+    logger.info(f"[SCALPER] Démarrage sur {len(config.symbols)} marchés")
+    while True:
         try:
-            signal = evaluate(symbol)
-            if signal is None:
-                return
+            # Mise à jour des prix dans le risk manager
+            can, _ = risk_manager.can_trade()
 
-            if signal.tradeable:
-                log.debug(
-                    "[SIGNAL] %s %s score=%.3f spread=%.4f%%",
-                    symbol, signal.action, signal.score, signal.spread_pct * 100,
-                )
-                pos = self.om.submit(signal)
-                if pos:
-                    await self.db.save_open(pos)
-        except Exception as exc:
-            log.error("[SCAN] %s error: %s", symbol, exc)
+            # Check exit de positions existantes
+            await check_and_close_positions()
 
-    async def _scan_cycle(self) -> None:
-        tasks = [self._scan_symbol(s) for s in config.symbols]
-        await asyncio.gather(*tasks, return_exceptions=True)
-        await self.om.tick()
+            if can:
+                # Scan de tous les marchés en parallèle
+                tasks = [_scan_symbol(s) for s in config.symbols]
+                await asyncio.gather(*tasks, return_exceptions=True)
 
-        # Persist newly closed trades
-        for trade in self.om.trader.history[self.db.saved_count:]:
-            await self.db.save_closed(trade)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.error(f"[SCALPER] Erreur boucle: {e}")
 
-    async def run(self) -> None:
-        """Main loop: scan all markets every SCAN_INTERVAL seconds."""
-        self.running = True
-        log.info(
-            "[SCALPER] Démarrage — %d marchés | capital=%.2f USDT | paper=%s",
-            len(config.symbols), config.initial_capital, config.paper_trading,
-        )
-
-        # Initial sentiment fetch
-        await self._update_sentiment()
-
-        sentiment_timer = time.time()
-
-        while self.running:
-            loop_start = time.time()
-
-            # Periodic sentiment refresh
-            if time.time() - sentiment_timer >= config.sentiment_interval:
-                asyncio.create_task(self._update_sentiment())
-                sentiment_timer = time.time()
-
-            await self._scan_cycle()
-            self.cycle += 1
-
-            # Sleep only remaining time (keeps cadence stable)
-            elapsed = time.time() - loop_start
-            sleep_for = max(0, config.scan_interval - elapsed)
-            await asyncio.sleep(sleep_for)
-
-    def stop(self) -> None:
-        self.running = False
-        log.info("[SCALPER] Arrêt demandé.")
+        await asyncio.sleep(config.scan_interval)

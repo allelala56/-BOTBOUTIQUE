@@ -1,98 +1,95 @@
-"""
-News sentiment analysis via Claude Haiku (claude-haiku-4-5-20251001).
-Caches results for SENTIMENT_INTERVAL seconds to minimize API calls.
-"""
+"""Analyse de sentiment des news via Claude Haiku"""
+import asyncio
 import json
 import logging
 import time
-from typing import Optional, Tuple
+from dataclasses import dataclass
 
 import anthropic
 
 from trading_bot.config import config
-from trading_bot.data.news_fetcher import get_recent_news
+from trading_bot.data.news_fetcher import get_news
 
-log = logging.getLogger(__name__)
-
-_cached_score: float = 0.0
-_cached_label: str = "Neutral"
-_cached_at: float = 0.0
-
-_client: Optional[anthropic.AsyncAnthropic] = None
+logger = logging.getLogger(__name__)
 
 
-def _get_client() -> Optional[anthropic.AsyncAnthropic]:
-    global _client
+@dataclass
+class SentimentResult:
+    score: float       # -1.0 (très baissier) à +1.0 (très haussier)
+    label: str
+    summary: str
+    ts: float
+
+
+_cache: SentimentResult = SentimentResult(score=0.0, label="neutral", summary="Aucune analyse", ts=0.0)
+_CACHE_TTL = 300.0   # 5 minutes
+_lock = asyncio.Lock()
+
+
+_PROMPT = """Tu es un analyste crypto expert. Voici {n} titres d'articles de news récents sur les crypto-monnaies.
+
+NEWS:
+{news}
+
+Analyse l'impact global sur le marché crypto et réponds UNIQUEMENT en JSON valide:
+{{
+  "score": <float entre -1.0 et 1.0>,
+  "label": "<très_baissier | baissier | neutre | haussier | très_haussier>",
+  "summary": "<résumé en 1 phrase max>"
+}}
+
+score = -1.0 signifie très baissier (crash, hack, ban), +1.0 signifie très haussier (ETF, adoption, ATH)."""
+
+
+async def refresh_sentiment() -> SentimentResult:
+    global _cache
     if not config.anthropic_api_key:
-        return None
-    if _client is None:
-        _client = anthropic.AsyncAnthropic(api_key=config.anthropic_api_key)
-    return _client
+        return _cache
 
+    async with _lock:
+        if time.time() - _cache.ts < _CACHE_TTL:
+            return _cache
 
-def _score_from_av_news(news: list) -> float:
-    """Fallback: average Alpha Vantage sentiment scores directly."""
-    scores = [n.get("av_sentiment_score", 0.0) for n in news if "av_sentiment_score" in n]
-    return sum(scores) / len(scores) if scores else 0.0
-
-
-async def analyze_sentiment() -> Tuple[float, str]:
-    """
-    Returns (score, label) where score is -1 (bearish) to +1 (bullish).
-    Uses cached result if still fresh.
-    """
-    global _cached_score, _cached_label, _cached_at
-
-    now = time.time()
-    if now - _cached_at < config.sentiment_interval:
-        return _cached_score, _cached_label
-
-    news = get_recent_news(20)
+    news = get_news(20)
     if not news:
-        return 0.0, "Neutral"
+        return _cache
 
-    client = _get_client()
-    if client is None:
-        # Fallback: use Alpha Vantage scores directly
-        score = _score_from_av_news(news)
-        label = "Bullish" if score > 0.15 else "Bearish" if score < -0.15 else "Neutral"
-        _cached_score, _cached_label, _cached_at = score, label, now
-        log.info("[SENTIMENT] fallback AV score=%.3f label=%s", score, label)
-        return score, label
-
-    # Build news digest for Claude
-    headlines = "\n".join(
-        f"- [{n['source']}] {n['title']}" for n in news[:15]
-    )
-    prompt = (
-        "Tu es un analyste financier spécialisé en crypto. "
-        "Analyse les titres d'actualité suivants et évalue le sentiment global du marché crypto.\n\n"
-        f"ACTUALITÉS:\n{headlines}\n\n"
-        "Réponds UNIQUEMENT avec un JSON valide sur une seule ligne:\n"
-        '{"score": <float entre -1 et +1>, "label": "<Bullish|Neutral|Bearish>", "reason": "<max 50 chars>"}'
-    )
+    news_text = "\n".join(f"- {a['title']}" for a in news[:20])
+    prompt = _PROMPT.format(n=len(news[:20]), news=news_text)
 
     try:
-        response = await client.messages.create(
+        client = anthropic.AsyncAnthropic(api_key=config.anthropic_api_key)
+        msg = await client.messages.create(
             model="claude-haiku-4-5-20251001",
-            max_tokens=100,
+            max_tokens=200,
             messages=[{"role": "user", "content": prompt}],
         )
-        raw = response.content[0].text.strip()
+        raw = msg.content[0].text.strip()
         data = json.loads(raw)
-        score = float(max(-1.0, min(1.0, data.get("score", 0.0))))
-        label = data.get("label", "Neutral")
-        reason = data.get("reason", "")
-        _cached_score, _cached_label, _cached_at = score, label, now
-        log.info("[SENTIMENT] Claude: score=%+.2f label=%s | %s", score, label, reason)
-        return score, label
-    except Exception as exc:
-        log.warning("[SENTIMENT] Claude analysis failed: %s", exc)
-        score = _score_from_av_news(news)
-        label = "Bullish" if score > 0.15 else "Bearish" if score < -0.15 else "Neutral"
-        _cached_score, _cached_label, _cached_at = score, label, now
-        return score, label
+        result = SentimentResult(
+            score=float(max(-1.0, min(1.0, data.get("score", 0.0)))),
+            label=data.get("label", "neutre"),
+            summary=data.get("summary", ""),
+            ts=time.time(),
+        )
+        async with _lock:
+            _cache = result
+        logger.info(f"[SENTIMENT] score={result.score:.2f} ({result.label}) — {result.summary}")
+        return result
+    except Exception as e:
+        logger.warning(f"[SENTIMENT] Erreur Claude: {e}")
+        return _cache
 
 
-def get_cached_sentiment() -> Tuple[float, str]:
-    return _cached_score, _cached_label
+def get_sentiment() -> SentimentResult:
+    return _cache
+
+
+async def sentiment_loop():
+    """Met à jour le sentiment toutes les 5 minutes."""
+    while True:
+        try:
+            await refresh_sentiment()
+        except Exception as e:
+            logger.error(f"[SENTIMENT] Loop error: {e}")
+        await asyncio.sleep(_CACHE_TTL)

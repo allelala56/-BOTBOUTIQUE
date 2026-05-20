@@ -1,80 +1,52 @@
-"""
-Signal aggregator: combines technical score + sentiment bias into a final trade signal.
-"""
+"""Génération et scoring final des signaux de trading."""
 import logging
 from dataclasses import dataclass
 from typing import Optional
 
-from trading_bot.analysis.technical import TechnicalSignal, compute_signal
-from trading_bot.analysis.sentiment import get_cached_sentiment
 from trading_bot.config import config
-from trading_bot.data.price_fetcher import get_candles, get_orderbook
+from trading_bot.analysis.technical import TechnicalSignal
+from trading_bot.analysis.sentiment import get_sentiment
 
-log = logging.getLogger(__name__)
-
-TECH_WEIGHT = 0.70
-SENT_WEIGHT = 0.30
+logger = logging.getLogger(__name__)
 
 
 @dataclass
 class TradeSignal:
     symbol: str
-    action: str          # "BUY" | "SELL" | "HOLD"
-    score: float         # final composite score
-    price: float
-    spread_pct: float
-    technical: TechnicalSignal
+    direction: int       # +1 BUY / -1 SELL
+    final_score: float   # 0.0 à 1.0
+    tech_score: float
     sentiment_score: float
-    tradeable: bool      # passes all filters
+    price: float
+    rsi: float
 
 
-def evaluate(symbol: str) -> Optional[TradeSignal]:
-    """
-    Evaluate a symbol and return a TradeSignal or None if data is unavailable.
-    """
-    df = get_candles(symbol)
-    if df is None or df.empty:
+def compute_final_signal(tech: TechnicalSignal) -> Optional[TradeSignal]:
+    """Combine signal technique + sentiment en un score final."""
+    if tech.direction == 0 or tech.score < 0.3:
         return None
 
-    tech = compute_signal(df)
-    if tech is None:
+    sentiment = get_sentiment()
+    # Sentiment score normalisé : -1..+1 → 0..1 dans le sens du trade
+    raw_sent = sentiment.score * tech.direction  # positif si sentiment aligne direction
+    sentiment_score = (raw_sent + 1.0) / 2.0    # normalisation 0..1
+
+    final = (config.technical_weight * tech.score +
+             config.sentiment_weight * sentiment_score)
+
+    if final < config.signal_threshold:
         return None
 
-    sentiment_score, _ = get_cached_sentiment()
-
-    # Combine scores: technical dominates, sentiment acts as bias
-    composite = TECH_WEIGHT * tech.score + SENT_WEIGHT * sentiment_score
-    composite = max(-1.0, min(1.0, composite))
-
-    ob = get_orderbook(symbol)
-    spread_pct = ob.get("spread_pct", 1.0)
-    price = ob.get("ask", 0.0) if composite > 0 else ob.get("bid", 0.0)
-    if price == 0.0:
-        price = float(df["close"].iloc[-1])
-
-    threshold = config.risk.signal_threshold
-    max_spread = config.risk.max_spread_pct
-
-    tradeable = (
-        abs(composite) >= threshold
-        and spread_pct <= max_spread
-        and price > 0
+    logger.debug(
+        f"[SIGNAL] {tech.symbol} {'BUY' if tech.direction > 0 else 'SELL'} "
+        f"score={final:.3f} (tech={tech.score:.2f} sent={sentiment_score:.2f})"
     )
-
-    if composite > threshold:
-        action = "BUY"
-    elif composite < -threshold:
-        action = "SELL"
-    else:
-        action = "HOLD"
-
     return TradeSignal(
-        symbol=symbol,
-        action=action,
-        score=composite,
-        price=price,
-        spread_pct=spread_pct,
-        technical=tech,
+        symbol=tech.symbol,
+        direction=tech.direction,
+        final_score=final,
+        tech_score=tech.score,
         sentiment_score=sentiment_score,
-        tradeable=tradeable and action != "HOLD",
+        price=tech.price,
+        rsi=tech.rsi,
     )

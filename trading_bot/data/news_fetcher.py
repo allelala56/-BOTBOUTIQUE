@@ -1,120 +1,139 @@
-"""
-News fetcher: RSS feeds (CoinDesk, Cointelegraph, CryptoSlate) + Alpha Vantage.
-Deduplication by URL — same pattern as HKUDS/AI-Trader market_intel.py.
-"""
+"""Récupération news crypto — RSS (xml stdlib) + Alpha Vantage"""
 import asyncio
 import logging
 import time
+import xml.etree.ElementTree as ET
 from typing import List, Dict
-from urllib.parse import urlparse
+from urllib.parse import urlencode
 
 import aiohttp
-import feedparser
 
 from trading_bot.config import config
 
-log = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 RSS_FEEDS = [
-    "https://www.coindesk.com/arc/outboundfeeds/rss/",
-    "https://cointelegraph.com/rss",
-    "https://cryptoslate.com/feed/",
-    "https://decrypt.co/feed",
+    ("CoinDesk",      "https://www.coindesk.com/arc/outboundfeeds/rss/"),
+    ("Cointelegraph", "https://cointelegraph.com/rss"),
+    ("Decrypt",       "https://decrypt.co/feed"),
+    ("BeInCrypto",    "https://beincrypto.com/feed/"),
 ]
 
-# In-memory cache: list of {title, url, summary, published, source}
 _news_cache: List[Dict] = []
-_last_fetch: float = 0.0
-_seen_urls: set = set()
+_cache_ts: float = 0.0
 
 
-async def _fetch_rss(session: aiohttp.ClientSession, url: str) -> List[Dict]:
-    items = []
+def _parse_rss(xml_text: str, source: str) -> List[Dict]:
+    """Parse un feed RSS avec xml.etree.ElementTree."""
+    articles = []
     try:
-        async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-            text = await resp.text()
-        feed = feedparser.parse(text)
-        source = urlparse(url).netloc.replace("www.", "")
-        for entry in feed.entries[:15]:
-            link = entry.get("link", "")
-            if link in _seen_urls:
-                continue
-            items.append({
-                "title": entry.get("title", ""),
-                "url": link,
-                "summary": entry.get("summary", "")[:300],
-                "published": entry.get("published", ""),
-                "source": source,
-            })
-    except Exception as exc:
-        log.warning("RSS fetch failed [%s]: %s", url, exc)
-    return items
+        root = ET.fromstring(xml_text)
+        ns = {"atom": "http://www.w3.org/2005/Atom"}
+        # RSS 2.0
+        for item in root.findall(".//item")[:15]:
+            title = item.findtext("title", "")
+            link  = item.findtext("link", "")
+            desc  = item.findtext("description", "")[:300]
+            pub   = item.findtext("pubDate", "")
+            if title:
+                articles.append({"title": title, "url": link,
+                                  "source": source, "published": pub,
+                                  "summary": desc})
+        # Atom
+        if not articles:
+            for entry in root.findall(".//{http://www.w3.org/2005/Atom}entry")[:15]:
+                title = entry.findtext("{http://www.w3.org/2005/Atom}title", "")
+                link_el = entry.find("{http://www.w3.org/2005/Atom}link")
+                link  = link_el.get("href", "") if link_el is not None else ""
+                summ  = entry.findtext("{http://www.w3.org/2005/Atom}summary", "")[:300]
+                pub   = entry.findtext("{http://www.w3.org/2005/Atom}updated", "")
+                if title:
+                    articles.append({"title": title, "url": link,
+                                      "source": source, "published": pub,
+                                      "summary": summ})
+    except ET.ParseError as e:
+        logger.debug(f"[NEWS] XML parse error ({source}): {e}")
+    return articles
+
+
+async def _fetch_rss(session: aiohttp.ClientSession, name: str, url: str) -> List[Dict]:
+    try:
+        headers = {"User-Agent": "Mozilla/5.0 (compatible; TradingBot/1.0)"}
+        async with session.get(url, timeout=aiohttp.ClientTimeout(total=12),
+                               headers=headers) as r:
+            text = await r.text()
+        return _parse_rss(text, name)
+    except Exception as e:
+        logger.debug(f"[NEWS] RSS {name}: {e}")
+        return []
 
 
 async def _fetch_alpha_vantage(session: aiohttp.ClientSession) -> List[Dict]:
     if not config.alpha_vantage_key:
         return []
-    url = (
-        "https://www.alphavantage.co/query"
-        "?function=NEWS_SENTIMENT"
-        "&topics=cryptocurrency,blockchain,financial_markets"
-        f"&apikey={config.alpha_vantage_key}"
-        "&limit=20"
-    )
+    params = {
+        "function": "NEWS_SENTIMENT",
+        "tickers":  "CRYPTO:BTC,CRYPTO:ETH",
+        "limit":    "20",
+        "apikey":   config.alpha_vantage_key,
+    }
+    url = "https://www.alphavantage.co/query?" + urlencode(params)
     try:
-        async with session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
-            data = await resp.json()
-        items = []
-        for article in data.get("feed", []):
-            link = article.get("url", "")
-            if link in _seen_urls:
-                continue
-            items.append({
-                "title": article.get("title", ""),
-                "url": link,
-                "summary": article.get("summary", "")[:300],
-                "published": article.get("time_published", ""),
-                "source": article.get("source", "alphavantage"),
-                "av_sentiment_score": float(article.get("overall_sentiment_score", 0)),
-                "av_sentiment_label": article.get("overall_sentiment_label", "Neutral"),
-            })
-        return items
-    except Exception as exc:
-        log.warning("Alpha Vantage news fetch failed: %s", exc)
+        async with session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as r:
+            data = await r.json()
+        return [
+            {
+                "title":           item.get("title", ""),
+                "url":             item.get("url", ""),
+                "source":          item.get("source", "AlphaVantage"),
+                "published":       item.get("time_published", ""),
+                "summary":         item.get("summary", "")[:300],
+                "sentiment_score": float(item.get("overall_sentiment_score", 0)),
+                "sentiment_label": item.get("overall_sentiment_label", "Neutral"),
+            }
+            for item in data.get("feed", [])
+        ]
+    except Exception as e:
+        logger.debug(f"[NEWS] AlphaVantage: {e}")
         return []
 
 
-async def refresh_news() -> None:
-    """Fetch all news sources and update the cache."""
-    global _last_fetch, _news_cache
-    async with aiohttp.ClientSession() as session:
-        tasks = [_fetch_rss(session, url) for url in RSS_FEEDS]
+def _deduplicate(articles: List[Dict]) -> List[Dict]:
+    seen, out = set(), []
+    for a in articles:
+        key = a.get("url") or f"{a['title']}{a['source']}"
+        if key not in seen:
+            seen.add(key)
+            out.append(a)
+    return out
+
+
+async def refresh_news():
+    global _news_cache, _cache_ts
+    connector = aiohttp.TCPConnector(ssl=False)
+    async with aiohttp.ClientSession(connector=connector) as session:
+        tasks = [_fetch_rss(session, n, u) for n, u in RSS_FEEDS]
         tasks.append(_fetch_alpha_vantage(session))
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
-    fresh: List[Dict] = []
-    for batch in results:
-        if isinstance(batch, list):
-            fresh.extend(batch)
+    all_articles = []
+    for r in results:
+        if isinstance(r, list):
+            all_articles.extend(r)
 
-    # Deduplicate
-    for item in fresh:
-        if item["url"] not in _seen_urls and item["url"]:
-            _seen_urls.add(item["url"])
-            _news_cache.append(item)
-
-    # Keep last 100 articles only
-    _news_cache = _news_cache[-100:]
-    _last_fetch = time.time()
-    log.info("[NEWS] Cache updated: %d articles total", len(_news_cache))
+    _news_cache = _deduplicate(all_articles)[:50]
+    _cache_ts = time.time()
+    logger.info(f"[NEWS] {len(_news_cache)} articles chargés")
 
 
-def get_recent_news(n: int = 20) -> List[Dict]:
-    return _news_cache[-n:]
+def get_news(max_items: int = 20) -> List[Dict]:
+    return _news_cache[:max_items]
 
 
-async def news_loop() -> None:
-    """Background loop: refresh news every SENTIMENT_INTERVAL seconds."""
+async def news_refresh_loop():
     while True:
-        await refresh_news()
-        await asyncio.sleep(config.sentiment_interval)
+        try:
+            await refresh_news()
+        except Exception as e:
+            logger.error(f"[NEWS] Refresh error: {e}")
+        await asyncio.sleep(config.news_refresh_seconds)

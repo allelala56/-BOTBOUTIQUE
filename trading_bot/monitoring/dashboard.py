@@ -1,151 +1,158 @@
-"""
-Real-time console dashboard using the `rich` library.
-Refreshes every second with live P&L, open positions, and stats.
-"""
+"""Dashboard console temps-réel avec la librairie rich"""
 import asyncio
 import time
 from datetime import datetime
 
-from rich import box
 from rich.console import Console
 from rich.layout import Layout
 from rich.live import Live
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
+from rich import box
 
 from trading_bot.config import config
-from trading_bot.analysis.sentiment import get_cached_sentiment
-from trading_bot.data.price_fetcher import get_latest_price
+from trading_bot.execution.order_manager import order_manager
+from trading_bot.strategy.risk_manager import risk_manager
+from trading_bot.monitoring.database import db
+from trading_bot.analysis.sentiment import get_sentiment
+from trading_bot.data.price_fetcher import LAST_PRICES
 
 console = Console()
+_start_time = time.time()
 
 
-def _render_header(stats: dict, risk_state) -> Panel:
-    pnl = stats.get("total_pnl", 0.0)
-    capital = stats.get("capital", config.initial_capital)
-    unrealized = stats.get("unrealized_pnl", 0.0)
-    pnl_color = "green" if pnl >= 0 else "red"
-    unr_color = "green" if unrealized >= 0 else "red"
-
-    sentiment_score, sentiment_label = get_cached_sentiment()
-    sent_color = "green" if sentiment_score > 0.1 else "red" if sentiment_score < -0.1 else "yellow"
-
-    initial = config.initial_capital
-    total_return = (capital - initial) / initial * 100
-
-    text = Text()
-    text.append("  ██  MACHINE À CACHE  ██  ", style="bold cyan")
-    text.append(f"  [{datetime.now().strftime('%H:%M:%S')}]\n\n", style="dim")
-    text.append(f"  Capital : ", style="bold")
-    text.append(f"{capital:,.2f} USDT ", style="bold white")
-    text.append(f"({total_return:+.2f}%)\n", style=pnl_color)
-    text.append(f"  P&L réalisé  : ", style="bold")
-    text.append(f"{pnl:+.4f} USDT\n", style=pnl_color)
-    text.append(f"  P&L non réalisé : ", style="bold")
-    text.append(f"{unrealized:+.4f} USDT\n", style=unr_color)
-    text.append(f"  Perte jour   : ", style="bold")
-    text.append(f"{stats.get('daily_pnl', 0.0):+.4f} USDT\n", style="white")
-    text.append(f"  Drawdown     : ", style="bold")
-    text.append(f"{stats.get('drawdown', 0.0):.2%}\n", style="white")
-    text.append(f"  Win rate     : ", style="bold")
-    text.append(f"{stats.get('win_rate', 0.0):.1%}  ", style="white")
-    text.append(f"({stats.get('wins', 0)}W / {stats.get('losses', 0)}L)", style="dim")
-    text.append(f"\n  Sentiment    : ", style="bold")
-    text.append(f"{sentiment_label} ({sentiment_score:+.2f})", style=sent_color)
-    text.append(f"  |  Positions ouvertes : ", style="bold")
-    text.append(f"{stats.get('open_positions', 0)}/{config.risk.max_concurrent_positions}\n", style="cyan")
-
-    mode = "[bold red]LIVE MONEY[/bold red]" if not config.paper_trading else "[bold green]PAPER TRADING[/bold green]"
-    return Panel(text, title=f"[bold cyan]Machine à Cache[/bold cyan] — {mode}", border_style="cyan")
+def _color_pnl(value: float) -> str:
+    if value > 0:
+        return f"[green]+{value:.4f}$[/green]"
+    if value < 0:
+        return f"[red]{value:.4f}$[/red]"
+    return f"[white]{value:.4f}$[/white]"
 
 
-def _render_positions(positions: dict) -> Panel:
-    table = Table(box=box.SIMPLE_HEAVY, show_header=True, header_style="bold magenta")
-    table.add_column("ID", width=8)
-    table.add_column("Symbole", width=12)
-    table.add_column("Côté", width=6)
-    table.add_column("Entrée", justify="right", width=14)
-    table.add_column("Actuel", justify="right", width=14)
-    table.add_column("P&L", justify="right", width=12)
-    table.add_column("P&L %", justify="right", width=8)
-    table.add_column("TP", justify="right", width=14)
-    table.add_column("SL", justify="right", width=14)
-    table.add_column("Tps", justify="right", width=8)
+def _color_pct(value: float) -> str:
+    pct = value * 100
+    if pct > 0:
+        return f"[green]+{pct:.3f}%[/green]"
+    if pct < 0:
+        return f"[red]{pct:.3f}%[/red]"
+    return f"[white]{pct:.3f}%[/white]"
 
-    for pos in positions.values():
-        current = get_latest_price(pos.symbol)
-        pnl = pos.pnl(current) if current > 0 else 0
-        pnl_pct = pos.pnl_pct(current) * 100 if current > 0 else 0
-        color = "green" if pnl >= 0 else "red"
-        hold = int(time.time() - pos.opened_at)
-        side_color = "cyan" if pos.side == "BUY" else "magenta"
 
-        table.add_row(
+async def _build_layout() -> Layout:
+    layout = Layout()
+    layout.split_column(
+        Layout(name="header", size=3),
+        Layout(name="main"),
+        Layout(name="footer", size=3),
+    )
+    layout["main"].split_row(
+        Layout(name="positions", ratio=2),
+        Layout(name="stats", ratio=1),
+    )
+
+    # --- HEADER ---
+    risk = risk_manager.get_stats()
+    uptime = int(time.time() - _start_time)
+    h, m, s = uptime // 3600, (uptime % 3600) // 60, uptime % 60
+    mode = "[yellow]PAPER[/yellow]" if config.paper_trading else "[red bold]LIVE[/red bold]"
+    sentiment = get_sentiment()
+    sent_color = "green" if sentiment.score > 0.2 else "red" if sentiment.score < -0.2 else "yellow"
+    header_text = (
+        f" [bold cyan]MACHINE À CACHE[/bold cyan] | Mode: {mode} | "
+        f"Capital: [bold]{risk['capital']:.2f}$[/bold] | "
+        f"Drawdown: [red]{risk['drawdown']:.2%}[/red] | "
+        f"Sentiment: [{sent_color}]{sentiment.score:+.2f} {sentiment.label}[/{sent_color}] | "
+        f"Uptime: {h:02d}:{m:02d}:{s:02d}"
+    )
+    layout["header"].update(Panel(Text.from_markup(header_text), style="bold"))
+
+    # --- POSITIONS OUVERTES ---
+    positions = await order_manager.get_positions()
+    pos_table = Table(box=box.SIMPLE, expand=True, show_header=True, header_style="bold cyan")
+    pos_table.add_column("ID", width=10)
+    pos_table.add_column("Symbole", width=12)
+    pos_table.add_column("Côté", width=6)
+    pos_table.add_column("Entrée", width=12)
+    pos_table.add_column("Actuel", width=12)
+    pos_table.add_column("P&L", width=14)
+    pos_table.add_column("Hold", width=8)
+    pos_table.add_column("TP", width=12)
+    pos_table.add_column("SL", width=12)
+
+    for pos in sorted(positions, key=lambda p: p.opened_at, reverse=True):
+        price = LAST_PRICES.get(pos.symbol, pos.current_price)
+        pos.update_price(price)
+        side_color = "green" if pos.side == "BUY" else "red"
+        hold = int(pos.hold_seconds)
+        pos_table.add_row(
             pos.id,
-            pos.symbol.replace("/USDT", ""),
-            Text(pos.side, style=side_color),
-            f"{pos.entry_price:.6f}",
-            f"{current:.6f}" if current > 0 else "—",
-            Text(f"{pnl:+.4f}", style=color),
-            Text(f"{pnl_pct:+.2f}%", style=color),
-            f"{pos.take_profit:.6f}",
-            f"{pos.stop_loss:.6f}",
+            pos.symbol,
+            f"[{side_color}]{pos.side}[/{side_color}]",
+            f"{pos.entry_price:.4f}",
+            f"{price:.4f}",
+            _color_pnl(pos.pnl),
             f"{hold}s",
+            f"[dim]{pos.tp_price:.4f}[/dim]",
+            f"[dim]{pos.sl_price:.4f}[/dim]",
         )
 
-    title = f"[bold]Positions Ouvertes[/bold] ({len(positions)})"
-    return Panel(table, title=title, border_style="magenta")
+    if not positions:
+        pos_table.add_row("—", "En attente de signaux...", "", "", "", "", "", "", "")
+
+    layout["positions"].update(Panel(pos_table, title=f"[cyan]Positions ouvertes ({len(positions)})[/cyan]"))
+
+    # --- STATS ---
+    stats = await db.get_today_stats()
+    win_rate = stats["wins"] / stats["trades"] * 100 if stats["trades"] > 0 else 0
+    risk_stats = risk_manager.get_stats()
+
+    stats_table = Table(box=box.SIMPLE, expand=True, show_header=False)
+    stats_table.add_column("Clé", style="cyan")
+    stats_table.add_column("Valeur", justify="right")
+
+    stats_table.add_row("Trades aujourd'hui", str(stats["trades"]))
+    stats_table.add_row("Gagnants", f"[green]{stats['wins']}[/green]")
+    stats_table.add_row("Perdants", f"[red]{stats['losses']}[/red]")
+    stats_table.add_row("Win Rate", f"{'[green]' if win_rate >= 50 else '[red]'}{win_rate:.1f}%{'[/green]' if win_rate >= 50 else '[/red]'}")
+    stats_table.add_row("P&L net today", _color_pnl(stats["net_pnl"]))
+    stats_table.add_row("Frais payés", f"[dim]{stats['total_fees']:.4f}$[/dim]")
+    stats_table.add_row("Capital total", f"[bold]{risk_stats['capital']:.2f}$[/bold]")
+    stats_table.add_row("Peak capital", f"{risk_stats['peak']:.2f}$")
+    stats_table.add_row("Drawdown", f"[red]{risk_stats['drawdown']:.2%}[/red]")
+    stats_table.add_row("Perte/jour", f"{risk_stats['daily_loss_pct']:.2%} / {config.max_daily_loss_pct:.0%}")
+    stats_table.add_row("Pertes consécutives", str(risk_stats['consecutive_losses']))
+
+    halted = risk_stats["trading_halted"]
+    status = "[red bold]HALTED[/red bold]" if halted else "[green bold]ACTIF[/green bold]"
+    stats_table.add_row("Statut", status)
+
+    layout["stats"].update(Panel(stats_table, title="[cyan]Statistiques[/cyan]"))
+
+    # --- FOOTER ---
+    layout["footer"].update(Panel(
+        Text.from_markup(
+            f" Marchés: [bold]{', '.join(config.symbols[:6])}[/bold]... | "
+            f"Scan: {config.scan_interval}s | "
+            f"TP: {config.take_profit_pct:.1%} | SL: {config.stop_loss_pct:.1%} | "
+            f"Max positions: {config.max_concurrent_positions} | "
+            f"[dim]{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}[/dim]"
+        ),
+        style="dim"
+    ))
+
+    return layout
 
 
-def _render_recent_trades(history: list) -> Panel:
-    table = Table(box=box.SIMPLE_HEAVY, show_header=True, header_style="bold yellow")
-    table.add_column("ID", width=8)
-    table.add_column("Symbole", width=12)
-    table.add_column("Côté", width=6)
-    table.add_column("Entrée", justify="right", width=14)
-    table.add_column("Sortie", justify="right", width=14)
-    table.add_column("P&L", justify="right", width=12)
-    table.add_column("P&L %", justify="right", width=8)
-    table.add_column("Durée", justify="right", width=8)
-    table.add_column("Raison", width=8)
-
-    recent = list(reversed(history[-15:]))
-    for trade in recent:
-        color = "green" if trade.pnl > 0 else "red"
-        side_color = "cyan" if trade.side == "BUY" else "magenta"
-        table.add_row(
-            trade.id,
-            trade.symbol.replace("/USDT", ""),
-            Text(trade.side, style=side_color),
-            f"{trade.entry_price:.6f}",
-            f"{trade.exit_price:.6f}",
-            Text(f"{trade.pnl:+.4f}", style=color),
-            Text(f"{trade.pnl_pct * 100:+.2f}%", style=color),
-            f"{int(trade.hold_seconds)}s",
-            trade.exit_reason,
-        )
-
-    return Panel(table, title="[bold]15 Derniers Trades[/bold]", border_style="yellow")
-
-
-class Dashboard:
-    def __init__(self, paper_trader, risk_manager):
-        self.trader = paper_trader
-        self.risk = risk_manager
-
-    async def run(self) -> None:
-        layout = Layout()
-        layout.split_column(
-            Layout(name="header", size=12),
-            Layout(name="positions", size=16),
-            Layout(name="history"),
-        )
-
-        with Live(layout, console=console, refresh_per_second=1, screen=True):
-            while True:
-                stats = self.trader.stats()
-                layout["header"].update(_render_header(stats, self.risk.state))
-                layout["positions"].update(_render_positions(self.trader.positions))
-                layout["history"].update(_render_recent_trades(self.trader.history))
-                await asyncio.sleep(1)
+async def dashboard_loop():
+    """Boucle du dashboard — rafraîchit toutes les secondes."""
+    with Live(console=console, refresh_per_second=1, screen=True) as live:
+        while True:
+            try:
+                layout = await _build_layout()
+                live.update(layout)
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                console.print(f"[red]Dashboard error: {e}[/red]")
+            await asyncio.sleep(1.0)

@@ -1,75 +1,44 @@
-"""
-Market intelligence aggregator.
-Combines macro signals, news sentiment, and orderbook health.
-Inspired by HKUDS/AI-Trader market_intel.py structure.
-"""
-import logging
-from dataclasses import dataclass
-from typing import Dict
+"""Agrégation intelligence marché — inspiré AI-Trader market_intel.py"""
+import time
+from dataclasses import dataclass, field
+from typing import Dict, List
 
-from trading_bot.data.news_fetcher import get_recent_news
-from trading_bot.data.price_fetcher import get_candles, get_orderbook
-
-log = logging.getLogger(__name__)
+from trading_bot.data.price_fetcher import LAST_PRICES, get_ohlcv
+from trading_bot.analysis.sentiment import get_sentiment
+from trading_bot.data.news_fetcher import get_news
 
 
 @dataclass
-class MarketIntel:
-    sentiment_score: float       # -1 (bearish) to +1 (bullish)
+class MarketSnapshot:
+    timestamp: float
+    prices: Dict[str, float]
+    sentiment_score: float
     sentiment_label: str
-    news_activity: str           # quiet / calm / active / elevated
-    top_bullish_symbols: list
-    top_bearish_symbols: list
-    market_summary: str
+    top_news: List[str]
+    activity_level: str    # quiet / calm / active / elevated
 
 
-def build_market_intel(sentiment_score: float, sentiment_label: str) -> MarketIntel:
-    """
-    Aggregate news + prices into a MarketIntel snapshot.
-    sentiment_score comes from SentimentAnalyzer.
-    """
-    news = get_recent_news(20)
-    count = len(news)
+def get_market_snapshot() -> MarketSnapshot:
+    """Retourne un instantané de l'état du marché."""
+    sentiment = get_sentiment()
+    news = get_news(5)
 
-    if count < 5:
+    # Niveau d'activité basé sur le nombre de news récentes
+    news_count = len(get_news(50))
+    if news_count < 5:
         activity = "quiet"
-    elif count < 10:
+    elif news_count < 15:
         activity = "calm"
-    elif count < 18:
+    elif news_count < 30:
         activity = "active"
     else:
         activity = "elevated"
 
-    # Parse Alpha Vantage ticker sentiment if available
-    bullish: Dict[str, float] = {}
-    bearish: Dict[str, float] = {}
-    for article in news:
-        score = article.get("av_sentiment_score", 0.0)
-        symbol = article.get("source", "")
-        if score > 0.15:
-            bullish[symbol] = bullish.get(symbol, 0) + score
-        elif score < -0.15:
-            bearish[symbol] = bearish.get(symbol, 0) + abs(score)
-
-    top_bullish = sorted(bullish, key=bullish.get, reverse=True)[:3]
-    top_bearish = sorted(bearish, key=bearish.get, reverse=True)[:3]
-
-    trend = "neutre"
-    if sentiment_score > 0.3:
-        trend = "haussier"
-    elif sentiment_score < -0.3:
-        trend = "baissier"
-
-    summary = (
-        f"Marché {trend} | Activité: {activity} | "
-        f"{count} news récentes | Score sentiment: {sentiment_score:+.2f}"
-    )
-
-    return MarketIntel(
-        sentiment_score=sentiment_score,
-        sentiment_label=sentiment_label,
-        news_activity=activity,
-        top_bullish_symbols=top_bullish,
-        top_bearish_symbols=top_bearish,
-        market_summary=summary,
+    return MarketSnapshot(
+        timestamp=time.time(),
+        prices=dict(LAST_PRICES),
+        sentiment_score=sentiment.score,
+        sentiment_label=sentiment.label,
+        top_news=[n["title"] for n in news],
+        activity_level=activity,
     )

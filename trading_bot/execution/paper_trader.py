@@ -1,218 +1,95 @@
-"""
-Paper trading engine: simulates trades on real market prices.
-Applies realistic slippage and exchange fees.
-"""
+"""Moteur de paper trading — simule exécution avec slippage et fees"""
 import logging
 import time
-import uuid
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Optional
 
 from trading_bot.config import config
-from trading_bot.data.price_fetcher import get_latest_price
+from trading_bot.execution.order_manager import order_manager, Position
+from trading_bot.strategy.risk_manager import risk_manager
+from trading_bot.monitoring.database import db, TradeRecord
+from trading_bot.data.price_fetcher import get_price
 
-log = logging.getLogger(__name__)
-
-
-@dataclass
-class Position:
-    id: str
-    symbol: str
-    side: str           # "BUY" | "SELL"
-    entry_price: float
-    size_quote: float   # invested amount in USDT
-    size_base: float    # quantity in base asset
-    opened_at: float    # unix timestamp
-    take_profit: float
-    stop_loss: float
-    max_hold_until: float
-    signal_score: float
-
-    def pnl(self, current_price: float) -> float:
-        if self.side == "BUY":
-            return (current_price - self.entry_price) / self.entry_price * self.size_quote
-        else:
-            return (self.entry_price - current_price) / self.entry_price * self.size_quote
-
-    def pnl_pct(self, current_price: float) -> float:
-        if self.entry_price == 0:
-            return 0.0
-        if self.side == "BUY":
-            return (current_price - self.entry_price) / self.entry_price
-        else:
-            return (self.entry_price - current_price) / self.entry_price
+logger = logging.getLogger(__name__)
 
 
-@dataclass
-class ClosedTrade:
-    id: str
-    symbol: str
-    side: str
-    entry_price: float
-    exit_price: float
-    size_quote: float
-    pnl: float
-    pnl_pct: float
-    hold_seconds: float
-    exit_reason: str    # "TP" | "SL" | "TIME" | "MANUAL"
-    opened_at: float
-    closed_at: float
+def _simulate_fill(price: float, side: str) -> float:
+    """Simule le slippage à l'exécution."""
+    if side == "BUY":
+        return price * (1 + config.slippage_pct)
+    return price * (1 - config.slippage_pct)
 
 
-class PaperTrader:
-    def __init__(self, risk_manager):
-        self.risk = risk_manager
-        self.positions: Dict[str, Position] = {}
-        self.history: List[ClosedTrade] = []
+async def open_trade(symbol: str, side: str, signal_score: float) -> Optional[Position]:
+    """Ouvre une position simulée."""
+    can, reason = risk_manager.can_trade()
+    if not can:
+        logger.debug(f"[PAPER] Skip {symbol}: {reason}")
+        return None
 
-    def open_position(
-        self,
-        symbol: str,
-        side: str,
-        price: float,
-        size_quote: float,
-        signal_score: float,
-    ) -> Optional[Position]:
-        # Apply slippage
-        if side == "BUY":
-            fill_price = price * (1 + config.slippage_pct)
-        else:
-            fill_price = price * (1 - config.slippage_pct)
+    market_price = get_price(symbol)
+    if not market_price:
+        return None
 
-        # Apply taker fee on entry
-        effective_quote = size_quote * (1 - config.fee_pct)
-        size_base = effective_quote / fill_price if fill_price > 0 else 0
+    fill_price = _simulate_fill(market_price, side)
+    usdt_size = risk_manager.position_size(fill_price)
 
-        tp_pct = config.risk.take_profit_pct
-        sl_pct = config.risk.stop_loss_pct
+    risk_manager.on_trade_open()
+    pos = await order_manager.open_position(
+        symbol=symbol, side=side, entry_price=fill_price,
+        usdt_size=usdt_size, signal_score=signal_score
+    )
+    return pos
 
-        if side == "BUY":
-            take_profit = fill_price * (1 + tp_pct)
-            stop_loss   = fill_price * (1 - sl_pct)
-        else:
-            take_profit = fill_price * (1 - tp_pct)
-            stop_loss   = fill_price * (1 + sl_pct)
 
-        pos = Position(
-            id=str(uuid.uuid4())[:8],
-            symbol=symbol,
-            side=side,
-            entry_price=fill_price,
-            size_quote=size_quote,
-            size_base=size_base,
-            opened_at=time.time(),
-            take_profit=take_profit,
-            stop_loss=stop_loss,
-            max_hold_until=time.time() + config.risk.max_hold_seconds,
-            signal_score=signal_score,
-        )
-        self.positions[pos.id] = pos
-        self.risk.on_trade_open()
-        log.info(
-            "[TRADE OPEN] %s %s @ %.6f | TP=%.6f SL=%.6f | size=%.2f USDT",
-            side, symbol, fill_price, take_profit, stop_loss, size_quote,
-        )
-        return pos
+async def close_trade(pos_id: str, exit_price: float, reason: str):
+    """Ferme une position simulée et enregistre le résultat."""
+    fill_price = _simulate_fill(
+        exit_price,
+        "SELL" if (await _get_side(pos_id)) == "BUY" else "BUY"
+    )
+    pos = await order_manager.close_position(pos_id, fill_price, reason)
+    if pos is None:
+        return
 
-    def close_position(self, pos_id: str, reason: str = "MANUAL") -> Optional[ClosedTrade]:
-        pos = self.positions.pop(pos_id, None)
-        if pos is None:
-            return None
+    fee = pos.quantity * config.fee_pct * 2   # entrée + sortie
+    net_pnl = pos.pnl - fee
 
-        current_price = get_latest_price(pos.symbol)
-        if current_price <= 0:
-            current_price = pos.entry_price  # fallback
+    risk_manager.on_trade_close(net_pnl)
 
-        # Apply slippage on exit
-        if pos.side == "BUY":
-            exit_price = current_price * (1 - config.slippage_pct)
-        else:
-            exit_price = current_price * (1 + config.slippage_pct)
+    record = TradeRecord(
+        id=None,
+        symbol=pos.symbol,
+        side=pos.side,
+        entry_price=pos.entry_price,
+        exit_price=fill_price,
+        quantity=pos.quantity,
+        pnl=net_pnl,
+        pnl_pct=pos.pnl_pct,
+        fee=fee,
+        hold_seconds=pos.hold_seconds,
+        exit_reason=reason,
+        opened_at=pos.opened_at,
+        closed_at=time.time(),
+        signal_score=pos.signal_score,
+    )
+    await db.save_trade(record)
 
-        raw_pnl = pos.pnl(exit_price)
-        fee_exit = pos.size_quote * config.fee_pct
-        net_pnl = raw_pnl - fee_exit
 
-        hold_secs = time.time() - pos.opened_at
-        pnl_pct = pos.pnl_pct(exit_price) - config.fee_pct * 2  # round-trip fees
+async def _get_side(pos_id: str) -> str:
+    positions = await order_manager.get_positions()
+    for p in positions:
+        if p.id == pos_id:
+            return p.side
+    return "BUY"
 
-        trade = ClosedTrade(
-            id=pos.id,
-            symbol=pos.symbol,
-            side=pos.side,
-            entry_price=pos.entry_price,
-            exit_price=exit_price,
-            size_quote=pos.size_quote,
-            pnl=net_pnl,
-            pnl_pct=pnl_pct,
-            hold_seconds=hold_secs,
-            exit_reason=reason,
-            opened_at=pos.opened_at,
-            closed_at=time.time(),
-        )
-        self.history.append(trade)
-        self.risk.on_trade_close(net_pnl)
 
-        emoji = "✅" if net_pnl > 0 else "❌"
-        log.info(
-            "[TRADE CLOSE] %s %s %s @ %.6f → %.6f | PnL=%+.4f USDT (%+.2f%%) | %s",
-            emoji, pos.side, pos.symbol, pos.entry_price, exit_price,
-            net_pnl, pnl_pct * 100, reason,
-        )
-        return trade
-
-    async def tick(self) -> None:
-        """Check all open positions for TP/SL/time exits."""
-        now = time.time()
-        to_close = []
-        for pos_id, pos in list(self.positions.items()):
-            price = get_latest_price(pos.symbol)
-            if price <= 0:
-                continue
-
-            if pos.side == "BUY":
-                if price >= pos.take_profit:
-                    to_close.append((pos_id, "TP"))
-                elif price <= pos.stop_loss:
-                    to_close.append((pos_id, "SL"))
-            else:
-                if price <= pos.take_profit:
-                    to_close.append((pos_id, "TP"))
-                elif price >= pos.stop_loss:
-                    to_close.append((pos_id, "SL"))
-
-            if now >= pos.max_hold_until:
-                to_close.append((pos_id, "TIME"))
-
-        already_closed = set()
-        for pos_id, reason in to_close:
-            if pos_id not in already_closed:
-                self.close_position(pos_id, reason)
-                already_closed.add(pos_id)
-
-    def stats(self) -> dict:
-        """Compute live P&L stats."""
-        trades = self.history
-        wins = [t for t in trades if t.pnl > 0]
-        losses = [t for t in trades if t.pnl <= 0]
-        total_pnl = sum(t.pnl for t in trades)
-        win_rate = len(wins) / len(trades) if trades else 0.0
-
-        unrealized = 0.0
-        for pos in self.positions.values():
-            p = get_latest_price(pos.symbol)
-            if p > 0:
-                unrealized += pos.pnl(p)
-
-        return {
-            "capital": self.risk.state.current_capital,
-            "total_trades": len(trades),
-            "open_positions": len(self.positions),
-            "win_rate": win_rate,
-            "total_pnl": total_pnl,
-            "unrealized_pnl": unrealized,
-            "daily_pnl": self.risk.state.daily_pnl,
-            "drawdown": self.risk.state.drawdown_pct(),
-            "wins": len(wins),
-            "losses": len(losses),
-        }
+async def check_and_close_positions():
+    """Vérifie toutes les positions ouvertes pour TP/SL/TIMEOUT."""
+    positions = await order_manager.get_positions()
+    for pos in positions:
+        price = get_price(pos.symbol)
+        if price:
+            pos.update_price(price)
+            reason = pos.should_close()
+            if reason:
+                await close_trade(pos.id, price, reason)

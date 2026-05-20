@@ -1,16 +1,15 @@
-# Telegram bot (existing)
+# Telegram bot (existant)
 pyTelegramBotAPI>=4.14
 
 # Trading & Exchange
 ccxt[async]>=4.2.0
 
-# Technical Analysis
+# Technical Analysis (calculs TA manuels avec pandas/numpy)
 pandas>=2.1.0
-pandas-ta>=0.3.14b
+numpy>=1.26.0
 
-# HTTP & Feeds
+# HTTP
 aiohttp>=3.9.0
-feedparser>=6.0.10
 
 # AI Sentiment Analysis
 anthropic>=0.40.0

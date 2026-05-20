@@ -1,92 +1,68 @@
-"""
-Telegram reporter: sends periodic P&L summaries and trade alerts.
-Non-blocking; only active if BOT_TOKEN and TELEGRAM_CHAT_ID are set.
-"""
+"""Rapports Telegram — P&L et alertes (optionnel)"""
 import asyncio
 import logging
 import time
+from typing import Optional
 
-import telebot
+import aiohttp
 
 from trading_bot.config import config
-from trading_bot.analysis.sentiment import get_cached_sentiment
+from trading_bot.strategy.risk_manager import risk_manager
+from trading_bot.monitoring.database import db
 
-log = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
-_bot = None
-_last_report = 0.0
-REPORT_INTERVAL = 3600  # send summary every hour
-
-
-def _get_bot():
-    global _bot
-    if _bot is None and config.telegram_token:
-        _bot = telebot.TeleBot(config.telegram_token, threaded=False)
-    return _bot
+_API_URL = "https://api.telegram.org/bot{token}/sendMessage"
 
 
-def _send(msg: str) -> None:
-    if not config.telegram_chat_id or not config.telegram_token:
+async def send_message(text: str):
+    """Envoie un message Telegram si configuré."""
+    if not config.bot_token or not config.telegram_chat_id:
         return
-    bot = _get_bot()
-    if bot is None:
-        return
+    url = _API_URL.format(token=config.bot_token)
+    payload = {
+        "chat_id": config.telegram_chat_id,
+        "text": text,
+        "parse_mode": "HTML",
+    }
     try:
-        bot.send_message(config.telegram_chat_id, msg, parse_mode="Markdown")
-    except Exception as exc:
-        log.warning("[TELEGRAM] Send failed: %s", exc)
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, json=payload, timeout=aiohttp.ClientTimeout(total=10)) as r:
+                if r.status != 200:
+                    logger.warning(f"[TG] Status {r.status}")
+    except Exception as e:
+        logger.debug(f"[TG] Error: {e}")
 
 
-def send_trade_alert(side: str, symbol: str, price: float, size_quote: float) -> None:
-    emoji = "🟢" if side == "BUY" else "🔴"
-    msg = (
-        f"{emoji} *TRADE OUVERT*\n"
-        f"`{side}` {symbol}\n"
-        f"Prix : `{price:.6f}` USDT\n"
-        f"Taille : `{size_quote:.2f}` USDT"
+async def send_daily_report():
+    """Rapport de fin de journée."""
+    stats = await db.get_today_stats()
+    risk = risk_manager.get_stats()
+    win_rate = stats["wins"] / stats["trades"] * 100 if stats["trades"] > 0 else 0
+
+    emoji = "🟢" if stats["net_pnl"] >= 0 else "🔴"
+    text = (
+        f"{emoji} <b>Machine à Cache — Rapport Journalier</b>\n\n"
+        f"📊 Trades: {stats['trades']} ({stats['wins']}W / {stats['losses']}L)\n"
+        f"🎯 Win Rate: {win_rate:.1f}%\n"
+        f"💰 P&amp;L net: {stats['net_pnl']:+.2f}$\n"
+        f"💸 Frais: {stats['total_fees']:.2f}$\n"
+        f"🏦 Capital: {risk['capital']:.2f}$\n"
+        f"📉 Drawdown: {risk['drawdown']:.2%}"
     )
-    _send(msg)
+    await send_message(text)
 
 
-def send_trade_close(symbol: str, pnl: float, pnl_pct: float, reason: str) -> None:
-    emoji = "✅" if pnl > 0 else "❌"
-    msg = (
-        f"{emoji} *TRADE FERMÉ* — {symbol}\n"
-        f"P&L : `{pnl:+.4f}` USDT (`{pnl_pct * 100:+.2f}%`)\n"
-        f"Raison : `{reason}`"
-    )
-    _send(msg)
+async def send_alert(message: str):
+    """Alerte urgente."""
+    await send_message(f"⚠️ <b>ALERTE</b>: {message}")
 
 
-def send_hourly_report(stats: dict) -> None:
-    global _last_report
-    now = time.time()
-    if now - _last_report < REPORT_INTERVAL:
-        return
-    _last_report = now
-
-    sentiment_score, sentiment_label = get_cached_sentiment()
-    initial = config.initial_capital
-    capital = stats.get("capital", initial)
-    total_return = (capital - initial) / initial * 100
-
-    msg = (
-        f"📊 *RAPPORT MACHINE À CACHE*\n"
-        f"━━━━━━━━━━━━━━━━━\n"
-        f"💰 Capital : `{capital:,.2f}` USDT\n"
-        f"📈 Rendement : `{total_return:+.2f}%`\n"
-        f"💵 P&L total : `{stats.get('total_pnl', 0.0):+.4f}` USDT\n"
-        f"📉 Drawdown : `{stats.get('drawdown', 0.0):.2%}`\n"
-        f"🎯 Win rate : `{stats.get('win_rate', 0.0):.1%}`\n"
-        f"📊 Trades : `{stats.get('total_trades', 0)}`\n"
-        f"🧠 Sentiment : `{sentiment_label}` ({sentiment_score:+.2f})\n"
-        f"📍 Positions : `{stats.get('open_positions', 0)}`"
-    )
-    _send(msg)
-
-
-async def reporter_loop(paper_trader) -> None:
-    """Background loop: send hourly reports."""
+async def reporter_loop():
+    """Envoie un rapport toutes les heures."""
     while True:
-        await asyncio.sleep(60)
-        send_hourly_report(paper_trader.stats())
+        await asyncio.sleep(3600)
+        try:
+            await send_daily_report()
+        except Exception as e:
+            logger.error(f"[TG] Reporter error: {e}")

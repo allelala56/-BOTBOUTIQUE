@@ -1,88 +1,117 @@
-"""
-SQLite persistence for open and closed trades.
-"""
+"""SQLite async — logging de tous les trades"""
+import asyncio
 import aiosqlite
-import logging
+from dataclasses import dataclass
+from typing import Optional
+from datetime import date
 
 from trading_bot.config import config
 
-log = logging.getLogger(__name__)
 
-CREATE_OPEN = """
-CREATE TABLE IF NOT EXISTS open_trades (
-    id TEXT PRIMARY KEY,
-    symbol TEXT,
-    side TEXT,
-    entry_price REAL,
-    size_quote REAL,
-    take_profit REAL,
-    stop_loss REAL,
-    opened_at REAL,
-    signal_score REAL
-)
+@dataclass
+class TradeRecord:
+    id: Optional[int]
+    symbol: str
+    side: str
+    entry_price: float
+    exit_price: float
+    quantity: float
+    pnl: float
+    pnl_pct: float
+    fee: float
+    hold_seconds: float
+    exit_reason: str
+    opened_at: float
+    closed_at: float
+    signal_score: float
+
+
+_CREATE_SQL = """
+CREATE TABLE IF NOT EXISTS trades (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    symbol       TEXT    NOT NULL,
+    side         TEXT    NOT NULL,
+    entry_price  REAL    NOT NULL,
+    exit_price   REAL    NOT NULL,
+    quantity     REAL    NOT NULL,
+    pnl          REAL    NOT NULL,
+    pnl_pct      REAL    NOT NULL,
+    fee          REAL    NOT NULL,
+    hold_seconds REAL    NOT NULL,
+    exit_reason  TEXT    NOT NULL,
+    opened_at    REAL    NOT NULL,
+    closed_at    REAL    NOT NULL,
+    signal_score REAL    NOT NULL
+);
+CREATE TABLE IF NOT EXISTS daily_stats (
+    date       TEXT PRIMARY KEY,
+    trades     INTEGER DEFAULT 0,
+    wins       INTEGER DEFAULT 0,
+    losses     INTEGER DEFAULT 0,
+    gross_pnl  REAL    DEFAULT 0,
+    net_pnl    REAL    DEFAULT 0,
+    total_fees REAL    DEFAULT 0
+);
 """
 
-CREATE_CLOSED = """
-CREATE TABLE IF NOT EXISTS closed_trades (
-    id TEXT PRIMARY KEY,
-    symbol TEXT,
-    side TEXT,
-    entry_price REAL,
-    exit_price REAL,
-    size_quote REAL,
-    pnl REAL,
-    pnl_pct REAL,
-    hold_seconds REAL,
-    exit_reason TEXT,
-    opened_at REAL,
-    closed_at REAL
-)
-"""
 
-
-class TradeDB:
+class Database:
     def __init__(self):
-        self.db_path = config.db_path
-        self.saved_count = 0
+        self._conn: Optional[aiosqlite.Connection] = None
+        self._lock = asyncio.Lock()
 
-    async def init(self) -> None:
-        async with aiosqlite.connect(self.db_path) as db:
-            await db.execute(CREATE_OPEN)
-            await db.execute(CREATE_CLOSED)
-            await db.commit()
-        log.info("[DB] Initialized: %s", self.db_path)
+    async def connect(self):
+        self._conn = await aiosqlite.connect(config.db_path)
+        await self._conn.executescript(_CREATE_SQL)
+        await self._conn.commit()
 
-    async def save_open(self, pos) -> None:
-        async with aiosqlite.connect(self.db_path) as db:
-            await db.execute(
-                "INSERT OR REPLACE INTO open_trades VALUES (?,?,?,?,?,?,?,?,?)",
-                (pos.id, pos.symbol, pos.side, pos.entry_price, pos.size_quote,
-                 pos.take_profit, pos.stop_loss, pos.opened_at, pos.signal_score),
+    async def save_trade(self, trade: TradeRecord):
+        async with self._lock:
+            await self._conn.execute(
+                """INSERT INTO trades
+                   (symbol, side, entry_price, exit_price, quantity, pnl,
+                    pnl_pct, fee, hold_seconds, exit_reason, opened_at, closed_at, signal_score)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (trade.symbol, trade.side, trade.entry_price, trade.exit_price,
+                 trade.quantity, trade.pnl, trade.pnl_pct, trade.fee,
+                 trade.hold_seconds, trade.exit_reason, trade.opened_at,
+                 trade.closed_at, trade.signal_score)
             )
-            await db.commit()
-
-    async def save_closed(self, trade) -> None:
-        async with aiosqlite.connect(self.db_path) as db:
-            await db.execute("DELETE FROM open_trades WHERE id=?", (trade.id,))
-            await db.execute(
-                "INSERT OR REPLACE INTO closed_trades VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-                (trade.id, trade.symbol, trade.side, trade.entry_price, trade.exit_price,
-                 trade.size_quote, trade.pnl, trade.pnl_pct, trade.hold_seconds,
-                 trade.exit_reason, trade.opened_at, trade.closed_at),
+            today = str(date.today())
+            win = 1 if trade.pnl > 0 else 0
+            loss = 1 - win
+            net = trade.pnl - trade.fee
+            await self._conn.execute(
+                """INSERT INTO daily_stats (date, trades, wins, losses, gross_pnl, net_pnl, total_fees)
+                   VALUES (?, 1, ?, ?, ?, ?, ?)
+                   ON CONFLICT(date) DO UPDATE SET
+                     trades     = trades + 1,
+                     wins       = wins + ?,
+                     losses     = losses + ?,
+                     gross_pnl  = gross_pnl + ?,
+                     net_pnl    = net_pnl + ?,
+                     total_fees = total_fees + ?""",
+                (today, win, loss, trade.pnl, net, trade.fee,
+                 win, loss, trade.pnl, net, trade.fee)
             )
-            await db.commit()
-        self.saved_count += 1
+            await self._conn.commit()
 
-    async def get_stats(self) -> dict:
-        async with aiosqlite.connect(self.db_path) as db:
-            async with db.execute("SELECT COUNT(*), SUM(pnl), AVG(pnl_pct) FROM closed_trades") as cur:
-                row = await cur.fetchone()
-            async with db.execute("SELECT COUNT(*) FROM closed_trades WHERE pnl > 0") as cur:
-                wins = (await cur.fetchone())[0]
-        total = row[0] or 0
-        return {
-            "total_closed": total,
-            "total_pnl": row[1] or 0.0,
-            "avg_pnl_pct": (row[2] or 0.0) * 100,
-            "win_rate": wins / total if total > 0 else 0.0,
-        }
+    async def get_today_stats(self) -> dict:
+        today = str(date.today())
+        async with self._lock:
+            cur = await self._conn.execute(
+                "SELECT trades, wins, losses, net_pnl, total_fees FROM daily_stats WHERE date=?",
+                (today,)
+            )
+            row = await cur.fetchone()
+        if not row:
+            return {"trades": 0, "wins": 0, "losses": 0, "net_pnl": 0.0, "total_fees": 0.0}
+        return {"trades": row[0], "wins": row[1], "losses": row[2],
+                "net_pnl": row[3], "total_fees": row[4]}
+
+    async def close(self):
+        if self._conn:
+            await self._conn.close()
+
+
+db = Database()
