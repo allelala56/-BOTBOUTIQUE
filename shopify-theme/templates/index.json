@@ -1,0 +1,84 @@
+{
+  "sections": {
+    "hero": {
+      "type": "hero-video",
+      "settings": {
+        "eyebrow": "🔥 Trending maintenant",
+        "title_line1": "Les produits qui font",
+        "title_highlighted": "vraiment la différence",
+        "typewriter_words": "livrés en 7 jours|garantis 30 jours|testés par des milliers",
+        "subtitle": "Découvre notre sélection de produits viraux, sourcés parmi les meilleures tendances mondiales.",
+        "cta_primary_text": "Voir les produits",
+        "cta_secondary_text": "Voir la vidéo",
+        "trust_1": "Livraison 5–9 jours en Suisse",
+        "trust_2": "Garantie 30 jours satisfait ou remboursé",
+        "trust_3": "Paiement Twint, CB, PayPal"
+      }
+    },
+    "trust_bar": {
+      "type": "trust-bar",
+      "settings": {}
+    },
+    "social_proof": {
+      "type": "social-proof-bar",
+      "settings": {
+        "title": "Vu sur TikTok & Instagram"
+      },
+      "blocks": {
+        "logo_tiktok": { "type": "logo", "settings": { "logo_name": "TikTok" } },
+        "logo_ig": { "type": "logo", "settings": { "logo_name": "Instagram" } },
+        "logo_yt": { "type": "logo", "settings": { "logo_name": "YouTube" } },
+        "logo_pin": { "type": "logo", "settings": { "logo_name": "Pinterest" } }
+      },
+      "block_order": ["logo_tiktok", "logo_ig", "logo_yt", "logo_pin"]
+    },
+    "featured_products": {
+      "type": "featured-products",
+      "settings": {
+        "eyebrow": "Tendances",
+        "title": "Top du moment 🔥",
+        "columns_desktop": "4",
+        "products_to_show": 8,
+        "show_view_all": true
+      }
+    },
+    "how_it_works": {
+      "type": "how-it-works",
+      "settings": {
+        "eyebrow": "Simple & rapide",
+        "title": "Commande en 3 étapes",
+        "cta_text": "Commencer mes achats"
+      },
+      "blocks": {
+        "step1": { "type": "step", "settings": { "emoji": "🛒", "title": "Choisis ton produit", "description": "Parcours notre sélection et ajoute ton produit coup de cœur au panier." } },
+        "step2": { "type": "step", "settings": { "emoji": "💳", "title": "Paye en toute sécurité", "description": "CB, Twint, PayPal — 100% sécurisé. Aucune information bancaire stockée." } },
+        "step3": { "type": "step", "settings": { "emoji": "📦", "title": "Reçois chez toi", "description": "Expédié sous 24h, livré en 5–9 jours partout en Suisse et en France." } }
+      },
+      "block_order": ["step1", "step2", "step3"]
+    },
+    "testimonials": {
+      "type": "testimonials",
+      "settings": {
+        "eyebrow": "Avis vérifiés",
+        "title": "Ils ont testé. Ils approuvent.",
+        "global_rating": "4.8",
+        "reviews_count": "1 247"
+      },
+      "blocks": {
+        "r1": { "type": "review", "settings": { "author": "Sophie M.", "date": "Il y a 3 jours", "rating": 5, "title": "Livraison rapide, produit top !", "body": "Reçu en 6 jours en Suisse, exactement comme sur les photos. Emballage soigné. Je recommande à 100% !" } },
+        "r2": { "type": "review", "settings": { "author": "Thomas K.", "date": "Il y a 1 semaine", "rating": 5, "title": "Qualité au rendez-vous", "body": "Excellent rapport qualité-prix. Ça fait exactement ce qui est promis, sans surprise. J'en ai commandé un deuxième." } },
+        "r3": { "type": "review", "settings": { "author": "Marie-Claire B.", "date": "Il y a 2 semaines", "rating": 5, "title": "Bluffant !", "body": "Sceptique au départ, mais j'ai été agréablement surprise. Livraison en 7 jours, service client réactif et produit fonctionnel." } },
+        "r4": { "type": "review", "settings": { "author": "Julien D.", "date": "Il y a 3 semaines", "rating": 4, "title": "Très bon produit", "body": "Fonctionne vraiment bien. Petit délai de livraison mais le résultat est là, et la qualité est présente." } }
+      },
+      "block_order": ["r1", "r2", "r3", "r4"]
+    }
+  },
+  "order": [
+    "hero",
+    "trust_bar",
+    "social_proof",
+    "featured_products",
+    "how_it_works",
+    "testimonials"
+  ]
+}

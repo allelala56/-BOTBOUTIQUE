@@ -1,0 +1,25 @@
+{% comment %}
+  Snippet : stars-rating
+  Usage : {% render 'stars-rating', rating: 4.7 %}
+  Paramètres : rating (Float, défaut 5.0), size (px, défaut 14)
+{% endcomment %}
+
+{%- assign r = rating | default: 5.0 | times: 1.0 -%}
+{%- assign full = r | floor -%}
+{%- assign half = r | modulo: 1 | times: 10 | floor -%}
+
+<span
+  class="stars"
+  aria-label="{{ r }} étoiles sur 5"
+  style="font-size:{{ size | default: 14 }}px;display:inline-flex;gap:1px;"
+>
+  {%- for i in (1..5) -%}
+    {%- if i <= full -%}
+      <span style="color:#FFB800;">★</span>
+    {%- elsif i == full | plus: 1 and half >= 5 -%}
+      <span style="color:#FFB800;opacity:0.6;">★</span>
+    {%- else -%}
+      <span style="color:rgba(255,184,0,0.2);">★</span>
+    {%- endif -%}
+  {%- endfor -%}
+</span>

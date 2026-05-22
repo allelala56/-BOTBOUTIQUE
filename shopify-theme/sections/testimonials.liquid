@@ -1,0 +1,225 @@
+{% comment %}
+  Section : Carrousel de témoignages clients
+  Drag-to-scroll natif (géré par animations.js)
+{% endcomment %}
+
+<section class="section" aria-labelledby="reviews-heading-{{ section.id }}">
+  <div class="container">
+
+    <div class="section-header" data-reveal>
+      {%- if section.settings.eyebrow != blank -%}
+        <span class="section-header__eyebrow">{{ section.settings.eyebrow }}</span>
+      {%- endif -%}
+      <h2 class="section-header__title" id="reviews-heading-{{ section.id }}">
+        {{ section.settings.title | default: 'Ce qu\'ils en disent' }}
+      </h2>
+      {%- if section.settings.subtitle != blank -%}
+        <p class="section-header__subtitle">{{ section.settings.subtitle }}</p>
+      {%- endif -%}
+
+      <!-- Note globale -->
+      {%- if section.settings.global_rating != blank -%}
+        <div style="display:flex;align-items:center;justify-content:center;gap:0.75rem;margin-top:1rem;">
+          {%- render 'stars-rating', rating: section.settings.global_rating, size: 20 -%}
+          <span style="font-family:var(--font-mono);font-size:1.5rem;font-weight:700;color:var(--color-primary);">
+            {{ section.settings.global_rating }}
+          </span>
+          <span style="color:var(--color-text-muted);font-size:0.9rem;">/ 5 · {{ section.settings.reviews_count | default: '1 200+' }} avis vérifiés</span>
+        </div>
+      {%- endif -%}
+    </div>
+
+    <!-- Carrousel drag-to-scroll -->
+    <div class="reviews-carousel" role="region" aria-label="Témoignages clients">
+      <div
+        class="reviews-carousel__track"
+        style="display:flex;gap:var(--space-lg);overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;cursor:grab;padding-bottom:var(--space-sm);"
+      >
+        {%- for block in section.blocks -%}
+          {%- case block.type -%}
+
+            {%- when 'review' -%}
+              <div
+                class="review-card"
+                style="flex:0 0 340px;scroll-snap-align:start;"
+                {{ block.shopify_attributes }}
+              >
+                <div class="review-card__header">
+                  <div class="review-card__avatar" aria-hidden="true">
+                    {{ block.settings.author | slice: 0 | upcase }}
+                  </div>
+                  <div class="review-card__meta">
+                    <div class="review-card__name">{{ block.settings.author }}</div>
+                    <div class="review-card__date">{{ block.settings.date }}</div>
+                  </div>
+                  <div class="review-card__verified">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+                      <polyline points="20 6 9 17 4 12"/>
+                    </svg>
+                    Vérifié
+                  </div>
+                </div>
+
+                {%- render 'stars-rating', rating: block.settings.rating -%}
+
+                {%- if block.settings.title != blank -%}
+                  <p style="font-weight:600;margin-top:0.75rem;margin-bottom:0.4rem;">{{ block.settings.title }}</p>
+                {%- endif -%}
+
+                <p class="review-card__body" style="margin-top:0.5rem;">{{ block.settings.body }}</p>
+
+                {%- if block.settings.image != blank -%}
+                  <div style="margin-top:0.75rem;border-radius:var(--radius-sm);overflow:hidden;max-height:160px;">
+                    {{
+                      block.settings.image
+                      | image_url: width: 400
+                      | image_tag: loading: 'lazy', alt: 'Photo client'
+                    }}
+                  </div>
+                {%- endif -%}
+              </div>
+
+          {%- endcase -%}
+        {%- endfor -%}
+      </div>
+    </div>
+
+    <!-- Indicateurs paginés (points) -->
+    <div style="display:flex;justify-content:center;gap:0.5rem;margin-top:var(--space-lg);" aria-hidden="true">
+      {%- for block in section.blocks -%}
+        <span style="width:8px;height:8px;border-radius:50%;background:{% if forloop.first %}var(--color-primary){% else %}var(--color-border){% endif %};transition:background 0.3s;"></span>
+      {%- endfor -%}
+    </div>
+
+  </div>
+</section>
+
+{% schema %}
+{
+  "name": "Témoignages clients",
+  "tag": "section",
+  "settings": [
+    {
+      "type": "text",
+      "id": "eyebrow",
+      "label": "Badge eyebrow",
+      "default": "Avis vérifiés"
+    },
+    {
+      "type": "text",
+      "id": "title",
+      "label": "Titre",
+      "default": "Ils ont testé. Ils approuvent."
+    },
+    {
+      "type": "text",
+      "id": "subtitle",
+      "label": "Sous-titre"
+    },
+    {
+      "type": "text",
+      "id": "global_rating",
+      "label": "Note globale (ex: 4.8)",
+      "default": "4.8"
+    },
+    {
+      "type": "text",
+      "id": "reviews_count",
+      "label": "Nombre total d'avis",
+      "default": "1 247"
+    }
+  ],
+  "blocks": [
+    {
+      "type": "review",
+      "name": "Avis client",
+      "settings": [
+        {
+          "type": "text",
+          "id": "author",
+          "label": "Prénom + initiale",
+          "default": "Sophie M."
+        },
+        {
+          "type": "text",
+          "id": "date",
+          "label": "Date",
+          "default": "Il y a 3 jours"
+        },
+        {
+          "type": "range",
+          "id": "rating",
+          "label": "Note",
+          "min": 1,
+          "max": 5,
+          "step": 1,
+          "default": 5
+        },
+        {
+          "type": "text",
+          "id": "title",
+          "label": "Titre de l'avis"
+        },
+        {
+          "type": "textarea",
+          "id": "body",
+          "label": "Contenu de l'avis",
+          "default": "Vraiment bluffant. Reçu en 6 jours, emballage soigné, produit exactement comme décrit. Je recommande sans hésiter !"
+        },
+        {
+          "type": "image_picker",
+          "id": "image",
+          "label": "Photo client (optionnel)"
+        }
+      ]
+    }
+  ],
+  "presets": [
+    {
+      "name": "Témoignages clients",
+      "blocks": [
+        {
+          "type": "review",
+          "settings": {
+            "author": "Sophie M.",
+            "date": "Il y a 3 jours",
+            "rating": 5,
+            "title": "Parfait, livraison rapide",
+            "body": "Reçu en 6 jours en Suisse, exactement comme sur les photos. Je recommande à 100% !"
+          }
+        },
+        {
+          "type": "review",
+          "settings": {
+            "author": "Thomas K.",
+            "date": "Il y a 1 semaine",
+            "rating": 5,
+            "title": "Qualité top",
+            "body": "Excellent rapport qualité-prix. Le produit dépasse mes attentes, je l'ai déjà commandé une deuxième fois."
+          }
+        },
+        {
+          "type": "review",
+          "settings": {
+            "author": "Marie-Claire B.",
+            "date": "Il y a 2 semaines",
+            "rating": 5,
+            "title": "Bluffant !",
+            "body": "Je suis sceptique d'habitude mais là j'ai été agréablement surprise. Livraison en 7 jours, service client réactif."
+          }
+        },
+        {
+          "type": "review",
+          "settings": {
+            "author": "Julien D.",
+            "date": "Il y a 3 semaines",
+            "rating": 4,
+            "title": "Très bon produit",
+            "body": "Fonctionne très bien. Petit délai de livraison mais le résultat est là."
+          }
+        }
+      ]
+    }
+  ]
+}
+{% endschema %}

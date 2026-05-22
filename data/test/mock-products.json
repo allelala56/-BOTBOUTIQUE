@@ -1,0 +1,116 @@
+[
+  {
+    "_comment": "Lot de 5 produits simulés pour tester le pipeline n8n manuellement.",
+    "_usage": "Injecter via le node 'Manual Trigger' dans n8n avant le node 'Claude API — Score produit'."
+  },
+  {
+    "id": "test-001",
+    "source": "tiktok",
+    "title": "Organisateur de câbles magnétique bureau — Lot de 5",
+    "description_raw": "Organisateur de câbles en silicone magnétique, compatible USB-C, Lightning, HDMI. Fixation adhésive sans perçage.",
+    "price_supplier": 6.80,
+    "currency": "CHF",
+    "rating": 4.9,
+    "orders_count": 12400,
+    "shipping_days_eu": 8,
+    "image_url": "https://ae01.alicdn.com/kf/sample-cable-organizer.jpg",
+    "video_url": null,
+    "category": "bureau-maison",
+    "signals": {
+      "tiktok_views": 4200000,
+      "tiktok_hashtag": "#cableorganizer",
+      "google_trends_growth_pct": 340,
+      "amazon_bsr_rank": 1240
+    },
+    "_expected_score": 82,
+    "_expected_verdict": "VALIDE"
+  },
+  {
+    "id": "test-002",
+    "source": "aliexpress",
+    "title": "Lampe LED gaming RGB bureau — 16 millions de couleurs",
+    "description_raw": "Lampe de bureau LED gaming avec 16M de couleurs, contrôle tactile, synchronisation musique, USB-C.",
+    "price_supplier": 14.20,
+    "currency": "CHF",
+    "rating": 4.7,
+    "orders_count": 8900,
+    "shipping_days_eu": 12,
+    "image_url": "https://ae01.alicdn.com/kf/sample-led-lamp.jpg",
+    "video_url": "https://ae01.alicdn.com/kf/sample-led-lamp.mp4",
+    "category": "gaming-tech",
+    "signals": {
+      "tiktok_views": 1800000,
+      "google_trends_growth_pct": 180,
+      "amazon_bsr_rank": 3200
+    },
+    "_expected_score": 74,
+    "_expected_verdict": "VALIDE"
+  },
+  {
+    "id": "test-003",
+    "source": "google_trends",
+    "title": "Brosse à dents électrique ultrasonique rechargeable",
+    "description_raw": "Brosse à dents électrique ultrasonique 40 000 vibrations/min, 4 modes, autonomie 30 jours.",
+    "price_supplier": 11.50,
+    "currency": "CHF",
+    "rating": 4.8,
+    "orders_count": 25000,
+    "shipping_days_eu": 10,
+    "image_url": "https://ae01.alicdn.com/kf/sample-toothbrush.jpg",
+    "video_url": null,
+    "category": "sante-beaute",
+    "signals": {
+      "tiktok_views": 890000,
+      "google_trends_growth_pct": 95,
+      "amazon_bsr_rank": 580
+    },
+    "_alert": "SANTE — Validation humaine obligatoire",
+    "_expected_score": 65,
+    "_expected_verdict": "REJETE (alerte santé + score < 70)"
+  },
+  {
+    "id": "test-004",
+    "source": "tiktok",
+    "title": "Support téléphone voiture vent magnétique 360°",
+    "description_raw": "Support téléphone voiture universel, fixation grille ventilation, rotation 360°, compatible tous smartphones.",
+    "price_supplier": 3.20,
+    "currency": "CHF",
+    "rating": 4.6,
+    "orders_count": 45000,
+    "shipping_days_eu": 14,
+    "image_url": "https://ae01.alicdn.com/kf/sample-car-mount.jpg",
+    "video_url": null,
+    "category": "auto-accessoires",
+    "signals": {
+      "tiktok_views": 320000,
+      "google_trends_growth_pct": 20,
+      "amazon_bsr_rank": 180,
+      "meta_ads_active_30d": 35
+    },
+    "_expected_score": 44,
+    "_expected_verdict": "REJETE (marché saturé + marge insuffisante)"
+  },
+  {
+    "id": "test-005",
+    "source": "aliexpress",
+    "title": "Massage gun percussion musculaire 6 vitesses",
+    "description_raw": "Pistolet de massage percussion professionnel, 6 vitesses, 4 têtes, autonomie 8h, 1500–3200 RPM.",
+    "price_supplier": 22.50,
+    "currency": "CHF",
+    "rating": 4.8,
+    "orders_count": 6200,
+    "shipping_days_eu": 9,
+    "image_url": "https://ae01.alicdn.com/kf/sample-massage-gun.jpg",
+    "video_url": "https://ae01.alicdn.com/kf/sample-massage-gun.mp4",
+    "category": "sport-fitness",
+    "signals": {
+      "tiktok_views": 2900000,
+      "tiktok_hashtag": "#recupération #sport",
+      "google_trends_growth_pct": 210,
+      "amazon_bsr_rank": 890,
+      "meta_ads_active_30d": 12
+    },
+    "_expected_score": 78,
+    "_expected_verdict": "VALIDE — hero product potentiel"
+  }
+]

@@ -1,0 +1,205 @@
+{% comment %}
+  Section : "Comment ça marche" — Timeline animée au scroll
+{% endcomment %}
+
+<section class="section" aria-labelledby="hiw-heading-{{ section.id }}">
+  <div class="container">
+
+    <div class="section-header" data-reveal>
+      {%- if section.settings.eyebrow != blank -%}
+        <span class="section-header__eyebrow">{{ section.settings.eyebrow }}</span>
+      {%- endif -%}
+      <h2 class="section-header__title" id="hiw-heading-{{ section.id }}">
+        {{ section.settings.title | default: 'Comment ça marche' }}
+      </h2>
+      {%- if section.settings.subtitle != blank -%}
+        <p class="section-header__subtitle">{{ section.settings.subtitle }}</p>
+      {%- endif -%}
+    </div>
+
+    <!-- Timeline desktop : horizontal | mobile : vertical -->
+    <div
+      class="hiw-timeline"
+      style="
+        display:grid;
+        grid-template-columns:repeat({{ section.blocks.size }}, 1fr);
+        gap:var(--space-lg);
+        position:relative;
+      "
+    >
+      <!-- Ligne de connexion -->
+      <div
+        aria-hidden="true"
+        style="
+          position:absolute;
+          top:2.25rem;
+          left:10%;
+          right:10%;
+          height:1px;
+          background:linear-gradient(90deg, var(--color-primary), var(--color-secondary));
+          opacity:0.35;
+          z-index:0;
+          display:none;
+        "
+        class="hiw-line"
+      ></div>
+
+      {%- for block in section.blocks -%}
+        {%- case block.type -%}
+          {%- when 'step' -%}
+            <div
+              class="hiw-step"
+              data-reveal
+              data-reveal-delay="{{ forloop.index0 | times: 120 }}"
+              style="
+                position:relative;
+                z-index:1;
+                text-align:center;
+                padding:var(--space-lg) var(--space-md);
+              "
+              {{ block.shopify_attributes }}
+            >
+              <!-- Numéro étape -->
+              <div
+                style="
+                  width:4.5rem;
+                  height:4.5rem;
+                  border-radius:50%;
+                  background:var(--color-surface);
+                  border:2px solid var(--color-border-glow);
+                  display:flex;
+                  align-items:center;
+                  justify-content:center;
+                  margin:0 auto var(--space-lg);
+                  font-family:var(--font-mono);
+                  font-size:1.5rem;
+                  font-weight:700;
+                  color:var(--color-primary);
+                  box-shadow:var(--glow-primary);
+                "
+              >
+                {%- if block.settings.emoji != blank -%}
+                  {{ block.settings.emoji }}
+                {%- else -%}
+                  {{ forloop.index }}
+                {%- endif -%}
+              </div>
+
+              <h3 style="font-size:1.0625rem;margin-bottom:0.5rem;">{{ block.settings.title }}</h3>
+              <p style="color:var(--color-text-muted);font-size:0.9375rem;line-height:1.6;">
+                {{ block.settings.description }}
+              </p>
+            </div>
+        {%- endcase -%}
+      {%- endfor -%}
+    </div>
+
+    <!-- CTA optionnel -->
+    {%- if section.settings.cta_text != blank -%}
+      <div style="text-align:center;margin-top:var(--space-2xl);" data-reveal>
+        <a
+          href="{{ section.settings.cta_url | default: routes.collections_url }}"
+          class="btn btn-primary btn-lg"
+        >
+          {{ section.settings.cta_text }}
+        </a>
+      </div>
+    {%- endif -%}
+
+  </div>
+</section>
+
+<style>
+  @media (max-width: 768px) {
+    .hiw-timeline {
+      grid-template-columns: 1fr !important;
+    }
+    .hiw-line { display: none !important; }
+    .hiw-step {
+      display: flex;
+      align-items: flex-start;
+      gap: var(--space-lg);
+      text-align: left !important;
+    }
+    .hiw-step > div:first-child {
+      margin: 0 !important;
+      flex-shrink: 0;
+    }
+  }
+  @media (min-width: 769px) {
+    .hiw-line { display: block !important; }
+  }
+</style>
+
+{% schema %}
+{
+  "name": "Comment ça marche",
+  "tag": "section",
+  "settings": [
+    {
+      "type": "text",
+      "id": "eyebrow",
+      "label": "Badge eyebrow",
+      "default": "Simple & rapide"
+    },
+    {
+      "type": "text",
+      "id": "title",
+      "label": "Titre",
+      "default": "Commande en 3 étapes"
+    },
+    {
+      "type": "text",
+      "id": "subtitle",
+      "label": "Sous-titre"
+    },
+    {
+      "type": "text",
+      "id": "cta_text",
+      "label": "Texte du CTA (optionnel)"
+    },
+    {
+      "type": "url",
+      "id": "cta_url",
+      "label": "Lien du CTA"
+    }
+  ],
+  "blocks": [
+    {
+      "type": "step",
+      "name": "Étape",
+      "limit": 5,
+      "settings": [
+        {
+          "type": "text",
+          "id": "emoji",
+          "label": "Emoji ou icône",
+          "default": "🛒"
+        },
+        {
+          "type": "text",
+          "id": "title",
+          "label": "Titre de l'étape",
+          "default": "Choisis ton produit"
+        },
+        {
+          "type": "textarea",
+          "id": "description",
+          "label": "Description",
+          "default": "Parcours notre sélection de produits tendance, tous testés et approuvés."
+        }
+      ]
+    }
+  ],
+  "presets": [
+    {
+      "name": "Comment ça marche",
+      "blocks": [
+        { "type": "step", "settings": { "emoji": "🛒", "title": "Choisis ton produit", "description": "Parcours notre sélection et ajoute ton produit coup de cœur au panier." } },
+        { "type": "step", "settings": { "emoji": "💳", "title": "Paye en toute sécurité", "description": "CB, Twint, PayPal — 100% sécurisé, aucune info stockée." } },
+        { "type": "step", "settings": { "emoji": "📦", "title": "Reçois chez toi", "description": "Expédié sous 24h, livré en 5–9 jours partout en Suisse et en France." } }
+      ]
+    }
+  ]
+}
+{% endschema %}

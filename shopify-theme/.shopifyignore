@@ -1,0 +1,7 @@
+# Fichiers à ignorer lors du déploiement via Shopify CLI
+.DS_Store
+*.log
+node_modules/
+.env
+.env.*
+*.md

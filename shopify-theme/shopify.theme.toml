@@ -1,0 +1,17 @@
+# Configuration Shopify CLI — BotBoutique Theme
+# Voir : https://shopify.dev/docs/themes/tools/cli
+
+[environments.development]
+theme = "BotBoutique — Dev"
+store = "ta-boutique.myshopify.com"
+# Lancer avec : shopify theme dev --environment=development
+
+[environments.staging]
+theme = "BotBoutique — Staging"
+store = "ta-boutique.myshopify.com"
+# Lancer avec : shopify theme push --environment=staging
+
+[environments.production]
+theme = "BotBoutique — Live"
+store = "ta-boutique.myshopify.com"
+# Lancer avec : shopify theme push --environment=production
