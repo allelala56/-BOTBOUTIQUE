@@ -1,0 +1,154 @@
+{
+  "name": "04 — Content Agent (Claude API)",
+  "nodes": [
+    {
+      "id": "webhook-trigger",
+      "name": "Webhook — Données produit + fournisseur",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "parameters": {
+        "path": "content-agent",
+        "responseMode": "responseNode"
+      }
+    },
+    {
+      "id": "claude-copywriter",
+      "name": "Claude — Copywriting complet",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [520, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-api-key", "value": "={{ $credentials.anthropicApiKey }}" },
+            { "name": "anthropic-version", "value": "2023-06-01" },
+            { "name": "content-type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": {
+          "model": "claude-sonnet-4-6",
+          "max_tokens": 4096,
+          "system": "Tu es un copywriter e-commerce expert en conversion (style Alex Hormozi + DTC US).\nTu génères du contenu produit optimisé pour la conversion et le SEO.\nTu réponds UNIQUEMENT avec un JSON valide, sans markdown ni commentaires.\nLangue : français (FR/CH), tutoiement.\nTon : direct, sûr de soi, axé bénéfices > features.\nJamais de superlatifs gratuits (révolutionnaire, incroyable).\nToujours une garantie + un élément d'urgence/rareté.",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Génère le contenu complet pour ce produit Shopify.\n\nDonnées produit :\n{{ JSON.stringify($json, null, 2) }}\n\nRetourne ce JSON exact :\n{\n  \"title\": \"<60 chars, mot-clé + bénéfice>\",\n  \"hook\": \"<1 phrase choc, format Le seul X qui Y>\",\n  \"meta_title\": \"<60 chars SEO>\",\n  \"meta_description\": \"<155 chars SEO, avec CTA>\",\n  \"body_html\": \"<HTML complet avec sections : Le problème, La solution, Pourquoi c'est différent (3 bullets), Comment l'utiliser (3 étapes), Ce que tu reçois>\",\n  \"bullet_points\": [\n    \"⚡ Bénéfice 1 : preuve courte\",\n    \"⚡ Bénéfice 2 : preuve courte\",\n    \"⚡ Bénéfice 3 : preuve courte\",\n    \"⚡ Bénéfice 4 : preuve courte\",\n    \"⚡ Bénéfice 5 : preuve courte\"\n  ],\n  \"faq\": [\n    { \"question\": \"...\", \"answer\": \"...\" },\n    { \"question\": \"...\", \"answer\": \"...\" },\n    { \"question\": \"...\", \"answer\": \"...\" },\n    { \"question\": \"...\", \"answer\": \"...\" },\n    { \"question\": \"...\", \"answer\": \"...\" }\n  ],\n  \"tags\": [\"tag1\", \"tag2\", \"tag3\", \"tag4\", \"tag5\", \"tag6\", \"tag7\", \"tag8\", \"tag9\", \"tag10\"],\n  \"alt_texts\": {\n    \"image_1\": \"<alt text descriptif>\",\n    \"image_2\": \"<alt text descriptif>\",\n    \"image_3\": \"<alt text descriptif>\"\n  },\n  \"urgency_text\": \"<ex: Stock limité — 47 vendus ces 24h>\",\n  \"guarantee_text\": \"<ex: Garantie satisfaction 30 jours ou remboursé>\",\n  \"shipping_text\": \"<ex: Livraison en 5–9 jours en Suisse>\"\n}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "parse-claude-response",
+      "name": "Parser la réponse Claude",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [800, 300],
+      "parameters": {
+        "jsCode": "const product = $('Webhook — Données produit + fournisseur').first().json;\nconst claudeResponse = $('Claude — Copywriting complet').first().json;\n\n// Extraire le JSON depuis la réponse Claude\nconst rawText = claudeResponse?.content?.[0]?.text || claudeResponse?.content || '';\n\nlet content;\ntry {\n  // Nettoyer si Claude a quand même mis du markdown\n  const cleaned = rawText.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();\n  content = JSON.parse(cleaned);\n} catch(e) {\n  // Fallback : extraire le JSON avec regex\n  const match = rawText.match(/\\{[\\s\\S]*\\}/);\n  if (match) {\n    content = JSON.parse(match[0]);\n  } else {\n    throw new Error('Impossible de parser la réponse Claude : ' + rawText.substring(0, 200));\n  }\n}\n\n// Traduire les reviews en français\nconst reviews = (product.reviews_raw || []).map(r => ({\n  ...r,\n  text_fr: r.text_original // sera traduit par un node suivant si nécessaire\n}));\n\nreturn [{\n  json: {\n    ...product,\n    content,\n    reviews_translated: reviews,\n    ready_for_import: true\n  }\n}];"
+      }
+    },
+    {
+      "id": "claude-translate-reviews",
+      "name": "Claude — Traduire reviews en FR",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1060, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-api-key", "value": "={{ $credentials.anthropicApiKey }}" },
+            { "name": "anthropic-version", "value": "2023-06-01" },
+            { "name": "content-type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": {
+          "model": "claude-haiku-4-5-20251001",
+          "max_tokens": 2048,
+          "messages": [
+            {
+              "role": "user",
+              "content": "Traduis ces avis clients en français naturel et authentique (pas trop formel). Garde les émotions et l'authenticité. Retourne UNIQUEMENT un JSON array.\n\nAvis : {{ JSON.stringify($json.reviews_raw.slice(0, 5)) }}\n\nRetourne : [{\"rating\": 5, \"text_fr\": \"...\", \"author\": \"...\", \"country\": \"...\"}]"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "finalize-product",
+      "name": "Finaliser le produit complet",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1320, 300],
+      "parameters": {
+        "jsCode": "const product = $('Parser la réponse Claude').first().json;\nconst claudeReviewsRaw = $('Claude — Traduire reviews en FR').first().json?.content?.[0]?.text || '[]';\n\nlet reviewsFr = [];\ntry {\n  const cleaned = claudeReviewsRaw.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();\n  reviewsFr = JSON.parse(cleaned);\n} catch(e) {\n  reviewsFr = product.reviews_raw?.slice(0, 5).map(r => ({\n    rating: r.rating,\n    text_fr: r.text_original,\n    author: r.author,\n    country: r.country\n  })) || [];\n}\n\nreturn [{\n  json: {\n    ...product,\n    reviews_fr: reviewsFr,\n    pipeline_stage: 'READY_FOR_SHOPIFY_IMPORT'\n  }\n}];"
+      }
+    },
+    {
+      "id": "update-airtable-content",
+      "name": "Airtable — Mettre à jour contenu",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2,
+      "position": [1580, 300],
+      "parameters": {
+        "operation": "update",
+        "baseId": "={{ $credentials.airtableBaseId }}",
+        "tableId": "tblProductCandidates",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Titre_FR": "={{ $json.content.title }}",
+            "Meta_title": "={{ $json.content.meta_title }}",
+            "Status": "Content OK — Prêt pour import Shopify",
+            "Pipeline_stage": "READY_FOR_SHOPIFY_IMPORT"
+          }
+        }
+      }
+    },
+    {
+      "id": "trigger-shopify",
+      "name": "Déclencher Shopify Import",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [1840, 300],
+      "parameters": {
+        "workflowId": "={{ $workflow.id_shopify_import }}",
+        "source": "database"
+      }
+    }
+  ],
+  "connections": {
+    "Webhook — Données produit + fournisseur": {
+      "main": [[{ "node": "Claude — Copywriting complet", "type": "main", "index": 0 }]]
+    },
+    "Claude — Copywriting complet": {
+      "main": [[{ "node": "Parser la réponse Claude", "type": "main", "index": 0 }]]
+    },
+    "Parser la réponse Claude": {
+      "main": [[{ "node": "Claude — Traduire reviews en FR", "type": "main", "index": 0 }]]
+    },
+    "Claude — Traduire reviews en FR": {
+      "main": [[{ "node": "Finaliser le produit complet", "type": "main", "index": 0 }]]
+    },
+    "Finaliser le produit complet": {
+      "main": [[{ "node": "Airtable — Mettre à jour contenu", "type": "main", "index": 0 }]]
+    },
+    "Airtable — Mettre à jour contenu": {
+      "main": [[{ "node": "Déclencher Shopify Import", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": true,
+  "settings": { "executionOrder": "v1" },
+  "meta": { "description": "Génère titre, description HTML, FAQ, bullets, meta SEO, alt texts et urgence via Claude Sonnet. Traduit les reviews fournisseur en français via Claude Haiku." }
+}

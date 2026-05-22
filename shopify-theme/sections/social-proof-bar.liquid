@@ -1,0 +1,107 @@
+{% comment %}
+  Section : Bande "Vu sur…" avec logos médias animés
+{% endcomment %}
+
+<div class="section-sm" style="overflow:hidden;" aria-label="Vu dans les médias">
+  <div class="container">
+    {%- if section.settings.title != blank -%}
+      <p
+        style="
+          text-align:center;
+          font-family:var(--font-mono);
+          font-size:0.75rem;
+          letter-spacing:0.12em;
+          text-transform:uppercase;
+          color:var(--color-text-subtle);
+          margin-bottom:var(--space-lg);
+        "
+      >
+        {{ section.settings.title }}
+      </p>
+    {%- endif -%}
+
+    <!-- Ticker infini -->
+    <div
+      style="
+        display:flex;
+        overflow:hidden;
+        mask-image:linear-gradient(90deg,transparent,black 15%,black 85%,transparent);
+        -webkit-mask-image:linear-gradient(90deg,transparent,black 15%,black 85%,transparent);
+      "
+    >
+      {%- assign ticker_content = '' -%}
+      {%- for block in section.blocks -%}
+        {%- if block.type == 'logo' -%}
+          {%- assign ticker_content = ticker_content | append: '<div style="flex-shrink:0;display:flex;align-items:center;padding:0 2.5rem;">' -%}
+          {%- if block.settings.logo_image != blank -%}
+            {%- assign ticker_content = ticker_content
+              | append: block.settings.logo_image
+              | image_url: height: 32
+              | image_tag: loading: 'lazy', alt: block.settings.logo_name | escape, style: 'height:32px;width:auto;opacity:0.45;filter:grayscale(1);transition:opacity 0.3s,filter 0.3s;'
+            -%}
+          {%- else -%}
+            {%- assign ticker_content = ticker_content
+              | append: '<span style="font-family:var(--font-heading);font-weight:700;font-size:1.1rem;color:var(--color-text-muted);letter-spacing:-0.02em;">'
+              | append: block.settings.logo_name
+              | append: '</span>'
+            -%}
+          {%- endif -%}
+          {%- assign ticker_content = ticker_content | append: '</div>' -%}
+        {%- endif -%}
+      {%- endfor -%}
+
+      <!-- Double pour le loop infini -->
+      <div class="announcement-bar__ticker" style="display:flex;align-items:center;">
+        {{ ticker_content }}
+        {{ ticker_content }}
+      </div>
+    </div>
+  </div>
+</div>
+
+{% schema %}
+{
+  "name": "Bande 'Vu sur…'",
+  "tag": "div",
+  "settings": [
+    {
+      "type": "text",
+      "id": "title",
+      "label": "Libellé au-dessus",
+      "default": "Vu sur TikTok & Instagram"
+    }
+  ],
+  "blocks": [
+    {
+      "type": "logo",
+      "name": "Logo média",
+      "limit": 8,
+      "settings": [
+        {
+          "type": "text",
+          "id": "logo_name",
+          "label": "Nom du média",
+          "default": "TikTok"
+        },
+        {
+          "type": "image_picker",
+          "id": "logo_image",
+          "label": "Logo (optionnel)"
+        }
+      ]
+    }
+  ],
+  "presets": [
+    {
+      "name": "Bande 'Vu sur…'",
+      "blocks": [
+        { "type": "logo", "settings": { "logo_name": "TikTok" } },
+        { "type": "logo", "settings": { "logo_name": "Instagram" } },
+        { "type": "logo", "settings": { "logo_name": "YouTube" } },
+        { "type": "logo", "settings": { "logo_name": "Pinterest" } },
+        { "type": "logo", "settings": { "logo_name": "Facebook" } }
+      ]
+    }
+  ]
+}
+{% endschema %}

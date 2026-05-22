@@ -1,0 +1,194 @@
+{
+  "name": "03 — Sourcing Agent",
+  "nodes": [
+    {
+      "id": "webhook-trigger",
+      "name": "Webhook — Produit pricé reçu",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "parameters": {
+        "path": "sourcing-agent",
+        "responseMode": "responseNode"
+      }
+    },
+    {
+      "id": "cj-dropshipping",
+      "name": "CJ Dropshipping — Chercher produit",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [500, 160],
+      "parameters": {
+        "method": "GET",
+        "url": "https://developers.cjdropshipping.com/api2.0/v1/product/list",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "CJ-Access-Token", "value": "={{ $credentials.cjDropshippingToken }}" }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "productNameEn", "value": "={{ $json.title }}" },
+            { "name": "pageNum", "value": "1" },
+            { "name": "pageSize", "value": "20" },
+            { "name": "countryCode", "value": "CH" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "aliexpress-supplier",
+      "name": "AliExpress — Détails fournisseur",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [500, 300],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api-sg.aliexpress.com/sync",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "method", "value": "aliexpress.affiliate.product.query" },
+            { "name": "app_key", "value": "={{ $credentials.aliexpressApiKey }}" },
+            { "name": "product_ids", "value": "={{ $json.id }}" },
+            { "name": "fields", "value": "product_id,product_title,original_price,sale_price,evaluate_rate,lastest_volume,ship_to_days,product_video_url,product_main_image_url,product_small_image_urls,sku_info" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "spocket-search",
+      "name": "Spocket — Fournisseurs EU/CH",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [500, 440],
+      "parameters": {
+        "method": "GET",
+        "url": "https://app.spocket.co/api/v2/products",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer {{ $credentials.spocketToken }}" }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "search", "value": "={{ $json.title }}" },
+            { "name": "ship_from", "value": "EU" },
+            { "name": "per_page", "value": "20" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "score-suppliers",
+      "name": "Scorer et sélectionner le meilleur fournisseur",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [800, 300],
+      "parameters": {
+        "jsCode": "const product = $('Webhook — Produit pricé reçu').first().json;\nconst cjResults = $('CJ Dropshipping — Chercher produit').first().json?.data?.list || [];\nconst aeResults = $('AliExpress — Détails fournisseur').first().json?.aliexpress_affiliate_product_query_response?.resp_result?.result?.products?.product || [];\nconst spocketResults = $('Spocket — Fournisseurs EU/CH').first().json?.products || [];\n\nfunction scoreSupplier(s) {\n  const rating = parseFloat(s.rating || s.evaluate_rate || 4.5);\n  const orders = parseInt(s.orders || s.lastest_volume || 100);\n  const shippingDays = parseInt(s.shipping_days_eu || s.ship_to_days || 14);\n  const price = parseFloat(s.price || s.sale_price || 999);\n\n  if (rating < 4.7 || orders < 500) return -1;\n\n  return (rating * 10)\n    + (orders > 1000 ? 15 : 5)\n    - (shippingDays * 2)\n    - (price * 0.5);\n}\n\nconst allSuppliers = [\n  ...cjResults.map(s => ({ ...s, source: 'cj_dropshipping', price: s.sellPrice, rating: s.productRating || 4.8, orders: s.totalOrders || 0, shipping_days_eu: 7 })),\n  ...aeResults.map(s => ({ ...s, source: 'aliexpress', price: s.sale_price, rating: s.evaluate_rate, orders: s.lastest_volume, shipping_days_eu: 14 })),\n  ...spocketResults.map(s => ({ ...s, source: 'spocket', price: s.wholesale_price, rating: s.supplier?.rating || 4.9, orders: s.supplier?.fulfilled_orders || 0, shipping_days_eu: 5 }))\n];\n\nconst scored = allSuppliers\n  .map(s => ({ ...s, score_sourcing: scoreSupplier(s) }))\n  .filter(s => s.score_sourcing > 0)\n  .sort((a, b) => b.score_sourcing - a.score_sourcing);\n\nif (!scored.length) {\n  return [{ json: { ...product, verdict_sourcing: 'REJETE', raison: 'Aucun fournisseur qualifié (rating < 4.7 ou orders < 500)' } }];\n}\n\nconst best = scored[0];\n\nreturn [{\n  json: {\n    ...product,\n    supplier: {\n      source: best.source,\n      id: best.product_id || best.pid || best.id,\n      name: best.productNameEn || best.product_title || best.name,\n      price_chf: best.price,\n      rating: best.rating,\n      orders: best.orders,\n      shipping_days_eu: best.shipping_days_eu,\n      images: [\n        best.product_main_image_url || best.image_url || '',\n        ...(best.product_small_image_urls?.string || [])\n      ].filter(Boolean).slice(0, 8),\n      video_url: best.product_video_url || null,\n      variants: best.sku_info || best.variants || [],\n      score_sourcing: best.score_sourcing\n    },\n    verdict_sourcing: 'VALIDE'\n  }\n}];"
+      }
+    },
+    {
+      "id": "fetch-reviews",
+      "name": "Récupérer les meilleures reviews",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1060, 300],
+      "parameters": {
+        "method": "GET",
+        "url": "https://feedbacks-api.aliexpress.com/api/v1/feedbacks",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "productId", "value": "={{ $json.supplier.id }}" },
+            { "name": "page", "value": "1" },
+            { "name": "pageSize", "value": "30" },
+            { "name": "withPictures", "value": "true" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "filter-reviews",
+      "name": "Filtrer reviews ≥ 4 étoiles",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1320, 300],
+      "parameters": {
+        "jsCode": "const product = $('Scorer et sélectionner le meilleur fournisseur').first().json;\nconst rawReviews = $('Récupérer les meilleures reviews').first().json?.feedbacks || [];\n\nconst topReviews = rawReviews\n  .filter(r => r.starRating >= 4)\n  .sort((a, b) => b.starRating - a.starRating || (b.images?.length || 0) - (a.images?.length || 0))\n  .slice(0, 20)\n  .map(r => ({\n    rating: r.starRating,\n    text_original: r.buyerFeedback,\n    author: r.buyerName || 'Client vérifié',\n    date: r.gmtCreate,\n    images: r.images || [],\n    country: r.buyerCountry || ''\n  }));\n\nreturn [{ json: { ...product, reviews_raw: topReviews } }];"
+      }
+    },
+    {
+      "id": "update-airtable-sourcing",
+      "name": "Airtable — Mettre à jour avec fournisseur",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2,
+      "position": [1580, 300],
+      "parameters": {
+        "operation": "update",
+        "baseId": "={{ $credentials.airtableBaseId }}",
+        "tableId": "tblProductCandidates",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Fournisseur": "={{ $json.supplier.source }}",
+            "Fournisseur_ID": "={{ $json.supplier.id }}",
+            "Prix_fournisseur_reel": "={{ $json.supplier.price_chf }}",
+            "Delai_livraison_EU": "={{ $json.supplier.shipping_days_eu }}",
+            "Nb_reviews": "={{ $json.reviews_raw.length }}",
+            "Status": "Sourcing OK — En attente content"
+          }
+        }
+      }
+    },
+    {
+      "id": "trigger-content",
+      "name": "Déclencher Content Agent",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [1840, 300],
+      "parameters": {
+        "workflowId": "={{ $workflow.id_content_agent }}",
+        "source": "database"
+      }
+    }
+  ],
+  "connections": {
+    "Webhook — Produit pricé reçu": {
+      "main": [[
+        { "node": "CJ Dropshipping — Chercher produit", "type": "main", "index": 0 },
+        { "node": "AliExpress — Détails fournisseur", "type": "main", "index": 0 },
+        { "node": "Spocket — Fournisseurs EU/CH", "type": "main", "index": 0 }
+      ]]
+    },
+    "CJ Dropshipping — Chercher produit": {
+      "main": [[{ "node": "Scorer et sélectionner le meilleur fournisseur", "type": "main", "index": 0 }]]
+    },
+    "AliExpress — Détails fournisseur": {
+      "main": [[{ "node": "Scorer et sélectionner le meilleur fournisseur", "type": "main", "index": 1 }]]
+    },
+    "Spocket — Fournisseurs EU/CH": {
+      "main": [[{ "node": "Scorer et sélectionner le meilleur fournisseur", "type": "main", "index": 2 }]]
+    },
+    "Scorer et sélectionner le meilleur fournisseur": {
+      "main": [[{ "node": "Récupérer les meilleures reviews", "type": "main", "index": 0 }]]
+    },
+    "Récupérer les meilleures reviews": {
+      "main": [[{ "node": "Filtrer reviews ≥ 4 étoiles", "type": "main", "index": 0 }]]
+    },
+    "Filtrer reviews ≥ 4 étoiles": {
+      "main": [[{ "node": "Airtable — Mettre à jour avec fournisseur", "type": "main", "index": 0 }]]
+    },
+    "Airtable — Mettre à jour avec fournisseur": {
+      "main": [[{ "node": "Déclencher Content Agent", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": true,
+  "settings": { "executionOrder": "v1" },
+  "meta": { "description": "Compare CJ Dropshipping, AliExpress et Spocket. Sélectionne le meilleur fournisseur (score = rating + délai + prix) et collecte les reviews ≥ 4 étoiles." }
+}

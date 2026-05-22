@@ -1,0 +1,229 @@
+[
+  {
+    "name": "theme_info",
+    "theme_name": "BotBoutique — Futuriste",
+    "theme_author": "BotBoutique",
+    "theme_version": "1.0.0",
+    "theme_documentation_url": "https://github.com/allelala56/-botboutique",
+    "theme_support_url": "https://github.com/allelala56/-botboutique/issues"
+  },
+  {
+    "name": "Général",
+    "settings": [
+      {
+        "type": "image_picker",
+        "id": "favicon",
+        "label": "Favicon"
+      },
+      {
+        "type": "image_picker",
+        "id": "logo",
+        "label": "Logo (remplace le nom de la boutique)"
+      },
+      {
+        "type": "range",
+        "id": "logo_width",
+        "label": "Largeur logo (px)",
+        "min": 80,
+        "max": 280,
+        "step": 10,
+        "default": 160,
+        "unit": "px"
+      }
+    ]
+  },
+  {
+    "name": "Barre d'annonce",
+    "settings": [
+      {
+        "type": "checkbox",
+        "id": "announcement_enabled",
+        "label": "Activer la barre d'annonce",
+        "default": true
+      },
+      {
+        "type": "text",
+        "id": "announcement_text",
+        "label": "Texte de l'annonce",
+        "default": "🚀 Livraison offerte dès CHF 79 — Paiement Twint accepté — Garantie 30 jours"
+      }
+    ]
+  },
+  {
+    "name": "Couleurs",
+    "settings": [
+      {
+        "type": "color",
+        "id": "color_bg",
+        "label": "Fond principal",
+        "default": "#0A0A0F"
+      },
+      {
+        "type": "color",
+        "id": "color_surface",
+        "label": "Surface / cartes",
+        "default": "#13131A"
+      },
+      {
+        "type": "color",
+        "id": "color_primary",
+        "label": "Accent primaire (cyan néon)",
+        "default": "#00F0FF"
+      },
+      {
+        "type": "color",
+        "id": "color_secondary",
+        "label": "Accent secondaire (violet)",
+        "default": "#B847FF"
+      },
+      {
+        "type": "color",
+        "id": "color_text",
+        "label": "Texte principal",
+        "default": "#E8E8F0"
+      },
+      {
+        "type": "color",
+        "id": "color_success",
+        "label": "Succès / économies",
+        "default": "#00FF94"
+      }
+    ]
+  },
+  {
+    "name": "Typographie",
+    "settings": [
+      {
+        "type": "select",
+        "id": "font_heading",
+        "label": "Police des titres",
+        "options": [
+          { "value": "Space Grotesk", "label": "Space Grotesk" },
+          { "value": "Satoshi", "label": "Satoshi" },
+          { "value": "Inter", "label": "Inter" },
+          { "value": "system-ui", "label": "Système" }
+        ],
+        "default": "Space Grotesk"
+      },
+      {
+        "type": "select",
+        "id": "font_body",
+        "label": "Police du corps",
+        "options": [
+          { "value": "Inter", "label": "Inter" },
+          { "value": "system-ui", "label": "Système" }
+        ],
+        "default": "Inter"
+      }
+    ]
+  },
+  {
+    "name": "Devise & Localisation",
+    "settings": [
+      {
+        "type": "select",
+        "id": "currency_default",
+        "label": "Devise par défaut",
+        "options": [
+          { "value": "CHF", "label": "CHF — Franc suisse" },
+          { "value": "EUR", "label": "EUR — Euro" }
+        ],
+        "default": "CHF"
+      },
+      {
+        "type": "text",
+        "id": "footer_tagline",
+        "label": "Tagline footer",
+        "default": "Produits tendance livrés directement chez toi en Suisse."
+      }
+    ]
+  },
+  {
+    "name": "Réseaux sociaux",
+    "settings": [
+      {
+        "type": "url",
+        "id": "social_tiktok",
+        "label": "TikTok"
+      },
+      {
+        "type": "url",
+        "id": "social_instagram",
+        "label": "Instagram"
+      },
+      {
+        "type": "url",
+        "id": "social_facebook",
+        "label": "Facebook"
+      }
+    ]
+  },
+  {
+    "name": "Newsletter",
+    "settings": [
+      {
+        "type": "text",
+        "id": "newsletter_incentive",
+        "label": "Incentive newsletter",
+        "default": "-10% sur ta première commande"
+      }
+    ]
+  },
+  {
+    "name": "Intégrations",
+    "settings": [
+      {
+        "type": "text",
+        "id": "klaviyo_company_id",
+        "label": "Klaviyo — Company ID",
+        "info": "Visible dans ton compte Klaviyo sous Settings > Account"
+      },
+      {
+        "type": "text",
+        "id": "judgeme_shop_token",
+        "label": "Judge.me — Shop token",
+        "info": "Dans Judge.me → Installation → Shop token"
+      },
+      {
+        "type": "text",
+        "id": "meta_pixel_id",
+        "label": "Meta Pixel ID"
+      },
+      {
+        "type": "text",
+        "id": "tiktok_pixel_id",
+        "label": "TikTok Pixel ID"
+      },
+      {
+        "type": "text",
+        "id": "ga4_measurement_id",
+        "label": "Google Analytics 4 — Measurement ID",
+        "info": "Format : G-XXXXXXXXXX"
+      }
+    ]
+  },
+  {
+    "name": "Performances",
+    "settings": [
+      {
+        "type": "checkbox",
+        "id": "cursor_custom_enabled",
+        "label": "Curseur custom néon (desktop uniquement)",
+        "default": true
+      },
+      {
+        "type": "checkbox",
+        "id": "animations_enabled",
+        "label": "Animations au scroll",
+        "default": true,
+        "info": "Automatiquement désactivé si l'utilisateur préfère les mouvements réduits"
+      },
+      {
+        "type": "checkbox",
+        "id": "card_tilt_enabled",
+        "label": "Effet 3D tilt sur les cartes produit",
+        "default": true
+      }
+    ]
+  }
+]

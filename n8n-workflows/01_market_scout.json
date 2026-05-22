@@ -1,0 +1,210 @@
+{
+  "name": "01 — Market Scout",
+  "nodes": [
+    {
+      "id": "cron-trigger",
+      "name": "Cron Trigger (4×/jour)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "parameters": {
+        "rule": {
+          "interval": [
+            { "field": "hours", "hoursInterval": 6 }
+          ]
+        }
+      }
+    },
+    {
+      "id": "google-trends",
+      "name": "Google Trends — Mots-clés en hausse",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [500, 160],
+      "parameters": {
+        "method": "GET",
+        "url": "https://trends.googleapis.com/trends/api/dailytrends",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "hl", "value": "fr-FR" },
+            { "name": "tz", "value": "60" },
+            { "name": "geo", "value": "FR" },
+            { "name": "ns", "value": "15" }
+          ]
+        },
+        "options": { "response": { "response": { "responseFormat": "text" } } }
+      }
+    },
+    {
+      "id": "aliexpress-hot",
+      "name": "AliExpress — Top Hot Selling",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [500, 300],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api-sg.aliexpress.com/sync",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "method", "value": "aliexpress.affiliate.hotproduct.query" },
+            { "name": "app_key", "value": "={{ $credentials.aliexpressApiKey }}" },
+            { "name": "category_ids", "value": "200000345,200000786,200002099" },
+            { "name": "sort", "value": "SALE_PRICE_ASC" },
+            { "name": "page_size", "value": "50" },
+            { "name": "fields", "value": "product_id,product_title,original_price,sale_price,evaluate_rate,lastest_volume,product_video_url,product_main_image_url" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "apify-tiktok",
+      "name": "Apify — TikTok #tiktokmademebuyit",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [500, 440],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.apify.com/v2/acts/clockworks~tiktok-hashtag-scraper/runs",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer {{ $credentials.apifyToken }}" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": {
+          "hashtags": ["tiktokmademebuyit", "viralproduct", "musthave"],
+          "resultsPerPage": 100,
+          "shouldDownloadVideos": false
+        }
+      }
+    },
+    {
+      "id": "aggregate-signals",
+      "name": "Agréger les signaux",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [780, 300],
+      "parameters": {
+        "jsCode": "// Normalise et fusionne les résultats des 3 sources\nconst googleTrends = $input.all().find(i => i.json.source === 'google_trends')?.json?.data || [];\nconst aliexpress = $input.all().find(i => i.json.source === 'aliexpress')?.json?.data || [];\nconst tiktok = $input.all().find(i => i.json.source === 'tiktok')?.json?.data || [];\n\nconst candidates = [];\n\n// Normalise AliExpress\naliexpress.forEach(p => {\n  candidates.push({\n    source: 'aliexpress',\n    id: p.product_id,\n    title: p.product_title,\n    price_supplier: parseFloat(p.sale_price),\n    rating: parseFloat(p.evaluate_rate),\n    monthly_sales: parseInt(p.lastest_volume) || 0,\n    image_url: p.product_main_image_url,\n    video_url: p.product_video_url || null,\n    raw: p\n  });\n});\n\n// Normalise TikTok\ntiktok.forEach(v => {\n  candidates.push({\n    source: 'tiktok',\n    id: v.id,\n    title: v.text || v.description,\n    views: v.playCount || 0,\n    likes: v.diggCount || 0,\n    shares: v.shareCount || 0,\n    raw: v\n  });\n});\n\nreturn candidates.map(c => ({ json: c }));"
+      }
+    },
+    {
+      "id": "claude-scoring",
+      "name": "Claude API — Score produit (0–100)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1,
+      "position": [1060, 300],
+      "parameters": {
+        "model": "claude-sonnet-4-6",
+        "messages": {
+          "messageValues": [
+            {
+              "role": "user",
+              "content": "Tu es un expert en dropshipping et e-commerce. Évalue ce produit et retourne UNIQUEMENT un JSON valide.\n\nProduit : {{ JSON.stringify($json) }}\n\nRetourne ce JSON exact (sans markdown) :\n{\n  \"score\": <0-100>,\n  \"tendance\": <0-30>,\n  \"marge_potentielle\": <0-25>,\n  \"saturation_inverse\": <0-20>,\n  \"wow_factor\": <0-15>,\n  \"facilite_logistique\": <0-10>,\n  \"verdict\": \"VALIDE|REJETE\",\n  \"raison\": \"<explication courte>\",\n  \"prix_vente_suggere_chf\": <nombre>,\n  \"niche\": \"<catégorie>\"\n}"
+            }
+          ]
+        },
+        "options": { "temperature": 0.3, "maxTokens": 500 }
+      }
+    },
+    {
+      "id": "filter-score",
+      "name": "Filter — Score ≥ 70",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2,
+      "position": [1340, 300],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "score-check",
+              "leftValue": "={{ $json.score }}",
+              "rightValue": 70,
+              "operator": { "type": "number", "operation": "gte" }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "save-airtable",
+      "name": "Airtable — Sauvegarder candidat",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2,
+      "position": [1620, 300],
+      "parameters": {
+        "operation": "create",
+        "baseId": "={{ $credentials.airtableBaseId }}",
+        "tableId": "tblProductCandidates",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Title": "={{ $json.title }}",
+            "Source": "={{ $json.source }}",
+            "Score": "={{ $json.score }}",
+            "Verdict": "={{ $json.verdict }}",
+            "Prix_fournisseur_CHF": "={{ $json.price_supplier }}",
+            "Prix_vente_suggere_CHF": "={{ $json.prix_vente_suggere_chf }}",
+            "Niche": "={{ $json.niche }}",
+            "Image_URL": "={{ $json.image_url }}",
+            "Status": "Nouveau",
+            "Date_detection": "={{ new Date().toISOString() }}"
+          }
+        }
+      }
+    },
+    {
+      "id": "trigger-pricing",
+      "name": "Déclencher Pricing Agent",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [1900, 300],
+      "parameters": {
+        "workflowId": "={{ $workflow.id_pricing_agent }}",
+        "source": "database",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Cron Trigger (4×/jour)": {
+      "main": [[
+        { "node": "Google Trends — Mots-clés en hausse", "type": "main", "index": 0 },
+        { "node": "AliExpress — Top Hot Selling", "type": "main", "index": 0 },
+        { "node": "Apify — TikTok #tiktokmademebuyit", "type": "main", "index": 0 }
+      ]]
+    },
+    "Google Trends — Mots-clés en hausse": {
+      "main": [[{ "node": "Agréger les signaux", "type": "main", "index": 0 }]]
+    },
+    "AliExpress — Top Hot Selling": {
+      "main": [[{ "node": "Agréger les signaux", "type": "main", "index": 1 }]]
+    },
+    "Apify — TikTok #tiktokmademebuyit": {
+      "main": [[{ "node": "Agréger les signaux", "type": "main", "index": 2 }]]
+    },
+    "Agréger les signaux": {
+      "main": [[{ "node": "Claude API — Score produit (0–100)", "type": "main", "index": 0 }]]
+    },
+    "Claude API — Score produit (0–100)": {
+      "main": [[{ "node": "Filter — Score ≥ 70", "type": "main", "index": 0 }]]
+    },
+    "Filter — Score ≥ 70": {
+      "main": [[{ "node": "Airtable — Sauvegarder candidat", "type": "main", "index": 0 }]]
+    },
+    "Airtable — Sauvegarder candidat": {
+      "main": [[{ "node": "Déclencher Pricing Agent", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": true,
+  "settings": { "executionOrder": "v1" },
+  "meta": { "description": "Détecte les produits gagnants depuis TikTok, Google Trends et AliExpress. Score chaque candidat via Claude (seuil 70/100) et l'envoie au pipeline." }
+}

@@ -1,0 +1,190 @@
+{% comment %}
+  Section : Grille produits "Top du moment"
+  Cards 3D avec hover, badge dynamique, quick view
+{% endcomment %}
+
+{%- assign collection = collections[section.settings.collection] -%}
+
+<section class="section" aria-labelledby="fp-heading-{{ section.id }}">
+  <div class="container">
+
+    <!-- En-tête section -->
+    <div class="section-header" data-reveal>
+      {%- if section.settings.eyebrow != blank -%}
+        <span class="section-header__eyebrow">{{ section.settings.eyebrow }}</span>
+      {%- endif -%}
+      <h2 class="section-header__title" id="fp-heading-{{ section.id }}">
+        {{ section.settings.title | default: 'Top du moment' }}
+      </h2>
+      {%- if section.settings.subtitle != blank -%}
+        <p class="section-header__subtitle">{{ section.settings.subtitle }}</p>
+      {%- endif -%}
+    </div>
+
+    <!-- Grille produits -->
+    <div class="grid-{{ section.settings.columns_desktop }}" role="list">
+      {%- for product in collection.products limit: section.settings.products_to_show -%}
+        {%- assign product_url = product.url -%}
+        {%- assign first_image = product.featured_image -%}
+        {%- assign price = product.price | money -%}
+        {%- assign compare_price = product.compare_at_price -%}
+        {%- assign savings_pct = 0 -%}
+        {%- if compare_price > product.price -%}
+          {%- assign savings_pct = compare_price | minus: product.price | times: 100 | divided_by: compare_price -%}
+        {%- endif -%}
+
+        <article class="card product-card" data-tilt role="listitem" data-reveal data-reveal-delay="{{ forloop.index0 | times: 80 }}">
+
+          <!-- Image -->
+          <a href="{{ product_url }}" class="product-card__image-wrap" aria-label="{{ product.title | escape }}">
+            {%- if first_image != blank -%}
+              {{
+                first_image
+                | image_url: width: 600
+                | image_tag:
+                    class: 'product-card__image',
+                    loading: 'lazy',
+                    alt: first_image.alt | default: product.title | escape,
+                    widths: '300,400,500,600'
+              }}
+            {%- else -%}
+              {{ 'product-1' | placeholder_svg_tag: 'product-card__image' }}
+            {%- endif -%}
+
+            <!-- Badges dynamiques -->
+            {%- assign urgency = product.metafields.custom.urgency_text.value -%}
+            {%- if urgency != blank -%}
+              <div class="product-card__badge product-card__badge--fire" aria-label="{{ urgency }}">
+                🔥 {{ urgency }}
+              </div>
+            {%- elsif savings_pct > 0 -%}
+              <div class="product-card__badge" aria-label="Économisez {{ savings_pct }}%">
+                -{{ savings_pct }}%
+              </div>
+            {%- endif -%}
+          </a>
+
+          <!-- Infos -->
+          <div class="product-card__body">
+            <h3 class="product-card__title">
+              <a href="{{ product_url }}">{{ product.title }}</a>
+            </h3>
+
+            <!-- Note étoiles (Judge.me) -->
+            {%- assign reviews_count = product.metafields.judgeme.all_reviews_count.value | default: 0 -%}
+            {%- if reviews_count > 0 -%}
+              <div class="product-info__rating" style="margin-bottom:0.5rem;">
+                <span class="stars" aria-hidden="true">★★★★★</span>
+                <span style="font-size:0.8125rem;color:var(--color-text-muted);">({{ reviews_count }})</span>
+              </div>
+            {%- endif -%}
+
+            <!-- Prix -->
+            <div class="product-card__price">
+              <span class="product-card__price-current">{{ price }}</span>
+              {%- if compare_price > product.price -%}
+                <span class="product-card__price-compare" aria-label="Prix original">
+                  {{ compare_price | money }}
+                </span>
+                <span class="product-card__price-save">-{{ savings_pct }}%</span>
+              {%- endif -%}
+            </div>
+
+            <!-- CTA au hover -->
+            <div class="product-card__cta">
+              <a
+                href="{{ product_url }}"
+                class="btn btn-primary btn-full"
+                aria-label="Voir {{ product.title | escape }}"
+              >
+                Voir le produit
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+                  <line x1="5" y1="12" x2="19" y2="12"/>
+                  <polyline points="12 5 19 12 12 19"/>
+                </svg>
+              </a>
+            </div>
+          </div>
+        </article>
+      {%- else -%}
+        <p style="color:var(--color-text-muted);">Aucun produit dans cette collection.</p>
+      {%- endfor -%}
+    </div>
+
+    <!-- Voir tout -->
+    {%- if section.settings.show_view_all and collection != blank -%}
+      <div style="text-align:center;margin-top:var(--space-2xl);" data-reveal>
+        <a href="{{ collection.url }}" class="btn btn-ghost btn-lg">
+          Voir tous les produits
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <line x1="5" y1="12" x2="19" y2="12"/>
+            <polyline points="12 5 19 12 12 19"/>
+          </svg>
+        </a>
+      </div>
+    {%- endif -%}
+
+  </div>
+</section>
+
+{% schema %}
+{
+  "name": "Grille produits",
+  "tag": "section",
+  "settings": [
+    {
+      "type": "text",
+      "id": "eyebrow",
+      "label": "Badge eyebrow",
+      "default": "Tendances"
+    },
+    {
+      "type": "text",
+      "id": "title",
+      "label": "Titre de la section",
+      "default": "Top du moment 🔥"
+    },
+    {
+      "type": "text",
+      "id": "subtitle",
+      "label": "Sous-titre"
+    },
+    {
+      "type": "collection",
+      "id": "collection",
+      "label": "Collection à afficher"
+    },
+    {
+      "type": "range",
+      "id": "products_to_show",
+      "label": "Nombre de produits",
+      "min": 2,
+      "max": 12,
+      "step": 2,
+      "default": 8
+    },
+    {
+      "type": "select",
+      "id": "columns_desktop",
+      "label": "Colonnes (desktop)",
+      "options": [
+        { "value": "2", "label": "2 colonnes" },
+        { "value": "3", "label": "3 colonnes" },
+        { "value": "4", "label": "4 colonnes" }
+      ],
+      "default": "4"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_view_all",
+      "label": "Afficher le bouton \"Voir tout\"",
+      "default": true
+    }
+  ],
+  "presets": [
+    {
+      "name": "Grille produits"
+    }
+  ]
+}
+{% endschema %}

@@ -1,0 +1,122 @@
+{
+  "general": {
+    "password_page": {
+      "login_form_heading": "Entrer avec un mot de passe",
+      "login_form_password_label": "Mot de passe",
+      "login_form_password_placeholder": "Ton mot de passe",
+      "login_form_submit": "Accéder",
+      "signup_form_email_label": "E-mail",
+      "signup_form_success": "Merci ! Tu seras notifié(e) à l'ouverture.",
+      "meta_description": "La boutique ouvrira bientôt."
+    },
+    "meta": {
+      "tags": "Étiqueté \"%{ tags }\"",
+      "page": "Page %{ page }"
+    }
+  },
+  "header": {
+    "navigation": {
+      "mobile_button": "Menu"
+    }
+  },
+  "cart": {
+    "general": {
+      "title": "Ton panier",
+      "subtotal": "Sous-total",
+      "checkout": "Commander",
+      "empty": "Ton panier est vide.",
+      "note": "Note pour la commande",
+      "shipping": "Les frais de livraison sont calculés à la commande.",
+      "items_count": {
+        "one": "%{ count } article",
+        "other": "%{ count } articles"
+      }
+    }
+  },
+  "products": {
+    "general": {
+      "add_to_cart": "Ajouter au panier",
+      "buy_now": "Acheter maintenant",
+      "sold_out": "Rupture de stock",
+      "unavailable": "Indisponible",
+      "from": "À partir de",
+      "quantity": "Quantité",
+      "description": "Description",
+      "reviews": "Avis",
+      "sku": "Référence",
+      "share": "Partager"
+    },
+    "variant_picker": {
+      "option_unavailable_with_value": "Indisponible — %{ option_value }"
+    }
+  },
+  "collections": {
+    "general": {
+      "view_all": "Voir tout",
+      "sort_by_label": "Trier par",
+      "sort_options": {
+        "featured": "Sélection",
+        "best-selling": "Meilleures ventes",
+        "title-ascending": "A–Z",
+        "title-descending": "Z–A",
+        "price-ascending": "Prix croissant",
+        "price-descending": "Prix décroissant",
+        "created-ascending": "Plus ancien",
+        "created-descending": "Nouveautés"
+      },
+      "product_count": {
+        "one": "%{ count } produit",
+        "other": "%{ count } produits"
+      }
+    }
+  },
+  "newsletter": {
+    "label": "E-mail",
+    "placeholder": "ton@email.ch",
+    "submit": "S'inscrire",
+    "success": "Merci pour ton inscription !"
+  },
+  "customer": {
+    "login": {
+      "title": "Se connecter",
+      "email": "E-mail",
+      "password": "Mot de passe",
+      "submit": "Se connecter",
+      "forgot_password": "Mot de passe oublié ?",
+      "no_account": "Pas encore de compte ?"
+    },
+    "register": {
+      "title": "Créer un compte",
+      "first_name": "Prénom",
+      "last_name": "Nom",
+      "email": "E-mail",
+      "password": "Mot de passe",
+      "submit": "Créer mon compte"
+    },
+    "account": {
+      "title": "Mon compte",
+      "orders": "Mes commandes",
+      "addresses": "Mes adresses"
+    },
+    "orders": {
+      "none": "Tu n'as pas encore passé de commande.",
+      "order_number": "Commande n°",
+      "date": "Date",
+      "status": "Statut",
+      "total": "Total"
+    }
+  },
+  "layout": {
+    "footer": {
+      "copyright": "© %{ shop_name } %{ year }. Tous droits réservés."
+    }
+  },
+  "accessibility": {
+    "skip_to_content": "Aller au contenu principal",
+    "close": "Fermer",
+    "open_navigation": "Ouvrir le menu",
+    "close_navigation": "Fermer le menu",
+    "previous": "Précédent",
+    "next": "Suivant"
+  }
+}

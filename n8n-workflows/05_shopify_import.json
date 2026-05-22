@@ -1,0 +1,246 @@
+{
+  "name": "05 — Shopify Import",
+  "nodes": [
+    {
+      "id": "webhook-trigger",
+      "name": "Webhook — Produit prêt pour import",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "parameters": {
+        "path": "shopify-import",
+        "responseMode": "responseNode"
+      }
+    },
+    {
+      "id": "create-product",
+      "name": "Shopify — Créer le produit (draft)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [500, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://{{ $credentials.shopifyStoreDomain }}/admin/api/2025-01/products.json",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-Shopify-Access-Token", "value": "={{ $credentials.shopifyAccessToken }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": {
+          "product": {
+            "title": "={{ $json.content.title }}",
+            "body_html": "={{ $json.content.body_html }}<div class='product-bullets'><ul>{{ $json.content.bullet_points.map(b => '<li>' + b + '</li>').join('') }}</ul></div><div class='product-faq'><h3>Questions fréquentes</h3>{{ $json.content.faq.map(f => '<details><summary>' + f.question + '</summary><p>' + f.answer + '</p></details>').join('') }}</div>",
+            "vendor": "BotBoutique",
+            "product_type": "={{ $json.niche }}",
+            "tags": "={{ $json.content.tags.join(', ') }}",
+            "status": "={% if $json.score >= 85 %}active{% else %}draft{% endif %}",
+            "variants": [
+              {
+                "price": "={{ $json.pricing.target_price_chf }}",
+                "compare_at_price": "={{ $json.pricing.crossed_price_chf }}",
+                "sku": "=BB-{{ $json.supplier.id }}-001",
+                "inventory_management": "shopify",
+                "inventory_policy": "deny",
+                "requires_shipping": true,
+                "taxable": true,
+                "weight": 0.5,
+                "weight_unit": "kg"
+              }
+            ],
+            "metafields": [
+              {
+                "namespace": "custom",
+                "key": "urgency_text",
+                "value": "={{ $json.content.urgency_text }}",
+                "type": "single_line_text_field"
+              },
+              {
+                "namespace": "custom",
+                "key": "guarantee_text",
+                "value": "={{ $json.content.guarantee_text }}",
+                "type": "single_line_text_field"
+              },
+              {
+                "namespace": "custom",
+                "key": "shipping_eta_ch",
+                "value": "={{ $json.content.shipping_text }}",
+                "type": "single_line_text_field"
+              },
+              {
+                "namespace": "seo",
+                "key": "title",
+                "value": "={{ $json.content.meta_title }}",
+                "type": "single_line_text_field"
+              },
+              {
+                "namespace": "seo",
+                "key": "description",
+                "value": "={{ $json.content.meta_description }}",
+                "type": "single_line_text_field"
+              },
+              {
+                "namespace": "custom",
+                "key": "hook",
+                "value": "={{ $json.content.hook }}",
+                "type": "single_line_text_field"
+              },
+              {
+                "namespace": "custom",
+                "key": "supplier_source",
+                "value": "={{ $json.supplier.source }}",
+                "type": "single_line_text_field"
+              },
+              {
+                "namespace": "custom",
+                "key": "agent_score",
+                "value": "={{ $json.score }}",
+                "type": "number_integer"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "upload-images",
+      "name": "Shopify — Uploader les images",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [780, 300],
+      "parameters": {
+        "jsCode": "// Upload chaque image via l'API Shopify\nconst productId = $('Shopify — Créer le produit (draft)').first().json.product.id;\nconst images = $('Webhook — Produit prêt pour import').first().json.supplier?.images || [];\nconst altTexts = $('Webhook — Produit prêt pour import').first().json.content?.alt_texts || {};\n\nconst imagePayloads = images.slice(0, 8).map((url, idx) => ({\n  product_id: productId,\n  src: url,\n  alt: altTexts[`image_${idx + 1}`] || `Image ${idx + 1}`\n}));\n\nreturn imagePayloads.map(img => ({ json: img }));"
+      }
+    },
+    {
+      "id": "http-upload-images",
+      "name": "Shopify — HTTP Upload image",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1040, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://{{ $credentials.shopifyStoreDomain }}/admin/api/2025-01/products/{{ $json.product_id }}/images.json",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-Shopify-Access-Token", "value": "={{ $credentials.shopifyAccessToken }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": {
+          "image": {
+            "src": "={{ $json.src }}",
+            "alt": "={{ $json.alt }}"
+          }
+        }
+      }
+    },
+    {
+      "id": "set-inventory",
+      "name": "Shopify — Définir le stock initial",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1300, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://{{ $credentials.shopifyStoreDomain }}/admin/api/2025-01/inventory_levels/set.json",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-Shopify-Access-Token", "value": "={{ $credentials.shopifyAccessToken }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": {
+          "location_id": "={{ $credentials.shopifyLocationId }}",
+          "inventory_item_id": "={{ $('Shopify — Créer le produit (draft)').first().json.product.variants[0].inventory_item_id }}",
+          "available": 100
+        }
+      }
+    },
+    {
+      "id": "import-reviews-judgeme",
+      "name": "Judge.me — Importer les reviews",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1560, 180],
+      "parameters": {
+        "method": "POST",
+        "url": "https://judge.me/api/v1/reviews",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer {{ $credentials.judgeMeToken }}" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": {
+          "shop_domain": "={{ $credentials.shopifyStoreDomain }}",
+          "platform": "shopify",
+          "identifier": "={{ $('Shopify — Créer le produit (draft)').first().json.product.id }}",
+          "title": "Avis vérifié",
+          "body": "={{ $json.text_fr }}",
+          "rating": "={{ $json.rating }}",
+          "reviewer": {
+            "name": "={{ $json.author }}",
+            "email": "client@verified.com",
+            "verified_buyer": true
+          }
+        }
+      }
+    },
+    {
+      "id": "notify-airtable-imported",
+      "name": "Airtable — Marquer comme importé",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2,
+      "position": [1820, 300],
+      "parameters": {
+        "operation": "update",
+        "baseId": "={{ $credentials.airtableBaseId }}",
+        "tableId": "tblProductCandidates",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Shopify_Product_ID": "={{ $('Shopify — Créer le produit (draft)').first().json.product.id }}",
+            "Shopify_URL": "=https://{{ $credentials.shopifyStoreDomain }}/products/{{ $('Shopify — Créer le produit (draft)').first().json.product.handle }}",
+            "Status": "={% if $('Webhook — Produit prêt pour import').first().json.score >= 85 %}Publié automatiquement{% else %}Importé — En attente validation{% endif %}",
+            "Date_import": "={{ new Date().toISOString() }}"
+          }
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook — Produit prêt pour import": {
+      "main": [[{ "node": "Shopify — Créer le produit (draft)", "type": "main", "index": 0 }]]
+    },
+    "Shopify — Créer le produit (draft)": {
+      "main": [[{ "node": "Shopify — Uploader les images", "type": "main", "index": 0 }]]
+    },
+    "Shopify — Uploader les images": {
+      "main": [[{ "node": "Shopify — HTTP Upload image", "type": "main", "index": 0 }]]
+    },
+    "Shopify — HTTP Upload image": {
+      "main": [[{ "node": "Shopify — Définir le stock initial", "type": "main", "index": 0 }]]
+    },
+    "Shopify — Définir le stock initial": {
+      "main": [
+        [{ "node": "Judge.me — Importer les reviews", "type": "main", "index": 0 }],
+        [{ "node": "Airtable — Marquer comme importé", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "active": true,
+  "settings": { "executionOrder": "v1" },
+  "meta": { "description": "Crée le produit sur Shopify (draft si score < 85, actif si ≥ 85), upload les images, définit le stock à 100 et importe les reviews dans Judge.me." }
+}

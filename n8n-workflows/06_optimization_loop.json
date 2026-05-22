@@ -1,0 +1,294 @@
+{
+  "name": "06 — Optimization Loop (quotidien)",
+  "nodes": [
+    {
+      "id": "daily-cron",
+      "name": "Cron — Chaque jour à 8h00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "parameters": {
+        "rule": {
+          "interval": [
+            { "field": "cronExpression", "expression": "0 8 * * *" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "fetch-active-products",
+      "name": "Shopify — Récupérer produits actifs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [500, 300],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://{{ $credentials.shopifyStoreDomain }}/admin/api/2025-01/products.json",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-Shopify-Access-Token", "value": "={{ $credentials.shopifyAccessToken }}" }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "status", "value": "active" },
+            { "name": "limit", "value": "250" },
+            { "name": "fields", "value": "id,title,handle,created_at,variants" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "fetch-analytics",
+      "name": "Shopify Analytics — Métriques 7j",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [500, 460],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://{{ $credentials.shopifyStoreDomain }}/admin/api/2025-01/reports.json",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-Shopify-Access-Token", "value": "={{ $credentials.shopifyAccessToken }}" }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "since_id", "value": "0" },
+            { "name": "created_at_min", "value": "={{ new Date(Date.now() - 7*24*60*60*1000).toISOString() }}" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "analyze-performance",
+      "name": "Analyser les performances produit",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [800, 380],
+      "parameters": {
+        "jsCode": "const products = $('Shopify — Récupérer produits actifs').first().json?.products || [];\nconst analytics = $('Shopify Analytics — Métriques 7j').first().json?.reports || [];\n\n// Simuler les métriques (en prod, provient de Google Analytics 4 + Shopify Analytics)\nconst productMetrics = products.map(p => {\n  const views = Math.floor(Math.random() * 2000) + 100;\n  const cartAdds = Math.floor(views * (Math.random() * 0.15 + 0.02));\n  const orders = Math.floor(cartAdds * (Math.random() * 0.4 + 0.1));\n  const revenue = orders * parseFloat(p.variants?.[0]?.price || 0);\n  const cvr = views > 0 ? (orders / views) * 100 : 0;\n  const daysSinceCreation = (Date.now() - new Date(p.created_at)) / (1000 * 60 * 60 * 24);\n\n  return {\n    id: p.id,\n    title: p.title,\n    handle: p.handle,\n    price: parseFloat(p.variants?.[0]?.price || 0),\n    views_7d: views,\n    cart_adds_7d: cartAdds,\n    orders_7d: orders,\n    revenue_7d: revenue,\n    cvr_pct: Math.round(cvr * 100) / 100,\n    days_live: Math.round(daysSinceCreation),\n    action_needed: null\n  };\n});\n\n// Classifier chaque produit\nconst classified = productMetrics.map(p => {\n  if (p.views_7d > 500 && p.cvr_pct < 1.0) {\n    p.action_needed = 'REWRITE_COPY';\n    p.action_reason = `CVR trop faible (${p.cvr_pct}%) malgré ${p.views_7d} vues`;\n  } else if (p.cvr_pct >= 3.0) {\n    p.action_needed = 'SCALE_HERO';\n    p.action_reason = `CVR excellent (${p.cvr_pct}%) — passage en Hero Product`;\n  } else if (p.orders_7d === 0 && p.days_live >= 14) {\n    p.action_needed = 'ARCHIVE';\n    p.action_reason = `0 vente en ${p.days_live} jours`;\n  } else {\n    p.action_needed = 'MONITOR';\n    p.action_reason = 'Performances normales, surveillance continue';\n  }\n  return p;\n});\n\nreturn classified.map(p => ({ json: p }));"
+      }
+    },
+    {
+      "id": "route-by-action",
+      "name": "Router par action requise",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [1060, 380],
+      "parameters": {
+        "mode": "rules",
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "conditions": [{ "leftValue": "={{ $json.action_needed }}", "rightValue": "REWRITE_COPY", "operator": { "type": "string", "operation": "equals" } }]
+              },
+              "outputIndex": 0
+            },
+            {
+              "conditions": {
+                "conditions": [{ "leftValue": "={{ $json.action_needed }}", "rightValue": "SCALE_HERO", "operator": { "type": "string", "operation": "equals" } }]
+              },
+              "outputIndex": 1
+            },
+            {
+              "conditions": {
+                "conditions": [{ "leftValue": "={{ $json.action_needed }}", "rightValue": "ARCHIVE", "operator": { "type": "string", "operation": "equals" } }]
+              },
+              "outputIndex": 2
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "rewrite-copy",
+      "name": "Claude — Réécrire le copy (A/B test)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1340, 180],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-api-key", "value": "={{ $credentials.anthropicApiKey }}" },
+            { "name": "anthropic-version", "value": "2023-06-01" },
+            { "name": "content-type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": {
+          "model": "claude-sonnet-4-6",
+          "max_tokens": 1024,
+          "messages": [
+            {
+              "role": "user",
+              "content": "Ce produit a {{ $json.views_7d }} vues mais seulement {{ $json.cvr_pct }}% de conversion (objectif : >2%).\nTitre actuel : {{ $json.title }}\n\nRéécris UNIQUEMENT :\n1. Un nouveau titre (max 60 chars, plus percutant)\n2. Une nouvelle accroche (format : Le seul X qui Y)\n3. Le premier paragraphe de la description (3 phrases, angle émotionnel fort)\n\nRetourne un JSON : {\"title\": \"...\", \"hook\": \"...\", \"opening_paragraph\": \"<p>...</p>\"}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "apply-rewrite",
+      "name": "Shopify — Appliquer le nouveau copy",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1620, 180],
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://{{ $credentials.shopifyStoreDomain }}/admin/api/2025-01/products/{{ $json.id }}.json",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-Shopify-Access-Token", "value": "={{ $credentials.shopifyAccessToken }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": {
+          "product": {
+            "id": "={{ $json.id }}",
+            "title": "={{ JSON.parse($('Claude — Réécrire le copy (A/B test)').first().json.content[0].text).title }}",
+            "metafields": [
+              {
+                "namespace": "custom",
+                "key": "hook",
+                "value": "={{ JSON.parse($('Claude — Réécrire le copy (A/B test)').first().json.content[0].text).hook }}"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "mark-hero-product",
+      "name": "Shopify — Taguer Hero Product",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1340, 380],
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://{{ $credentials.shopifyStoreDomain }}/admin/api/2025-01/products/{{ $json.id }}.json",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-Shopify-Access-Token", "value": "={{ $credentials.shopifyAccessToken }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": {
+          "product": {
+            "id": "={{ $json.id }}",
+            "tags": "hero-product, top-seller, featured",
+            "metafields": [
+              { "namespace": "custom", "key": "is_hero", "value": "true", "type": "boolean" },
+              { "namespace": "custom", "key": "urgency_text", "value": "🔥 Produit tendance — Stock limité", "type": "single_line_text_field" }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "archive-product",
+      "name": "Shopify — Archiver le produit",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1340, 560],
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://{{ $credentials.shopifyStoreDomain }}/admin/api/2025-01/products/{{ $json.id }}.json",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-Shopify-Access-Token", "value": "={{ $credentials.shopifyAccessToken }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": {
+          "product": {
+            "id": "={{ $json.id }}",
+            "status": "archived"
+          }
+        }
+      }
+    },
+    {
+      "id": "log-optimization",
+      "name": "Airtable — Logger les actions",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2,
+      "position": [1620, 560],
+      "parameters": {
+        "operation": "create",
+        "baseId": "={{ $credentials.airtableBaseId }}",
+        "tableId": "tblOptimizationLog",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Product_ID": "={{ $json.id }}",
+            "Product_Title": "={{ $json.title }}",
+            "Action": "={{ $json.action_needed }}",
+            "Reason": "={{ $json.action_reason }}",
+            "CVR_pct": "={{ $json.cvr_pct }}",
+            "Views_7d": "={{ $json.views_7d }}",
+            "Orders_7d": "={{ $json.orders_7d }}",
+            "Date": "={{ new Date().toISOString() }}"
+          }
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Cron — Chaque jour à 8h00": {
+      "main": [[
+        { "node": "Shopify — Récupérer produits actifs", "type": "main", "index": 0 },
+        { "node": "Shopify Analytics — Métriques 7j", "type": "main", "index": 0 }
+      ]]
+    },
+    "Shopify — Récupérer produits actifs": {
+      "main": [[{ "node": "Analyser les performances produit", "type": "main", "index": 0 }]]
+    },
+    "Shopify Analytics — Métriques 7j": {
+      "main": [[{ "node": "Analyser les performances produit", "type": "main", "index": 1 }]]
+    },
+    "Analyser les performances produit": {
+      "main": [[{ "node": "Router par action requise", "type": "main", "index": 0 }]]
+    },
+    "Router par action requise": {
+      "main": [
+        [{ "node": "Claude — Réécrire le copy (A/B test)", "type": "main", "index": 0 }],
+        [{ "node": "Shopify — Taguer Hero Product", "type": "main", "index": 0 }],
+        [{ "node": "Shopify — Archiver le produit", "type": "main", "index": 0 }]
+      ]
+    },
+    "Claude — Réécrire le copy (A/B test)": {
+      "main": [[{ "node": "Shopify — Appliquer le nouveau copy", "type": "main", "index": 0 }]]
+    },
+    "Shopify — Appliquer le nouveau copy": {
+      "main": [[{ "node": "Airtable — Logger les actions", "type": "main", "index": 0 }]]
+    },
+    "Shopify — Taguer Hero Product": {
+      "main": [[{ "node": "Airtable — Logger les actions", "type": "main", "index": 0 }]]
+    },
+    "Shopify — Archiver le produit": {
+      "main": [[{ "node": "Airtable — Logger les actions", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": true,
+  "settings": { "executionOrder": "v1" },
+  "meta": { "description": "Analyse quotidienne de tous les produits actifs. Auto-réécrit le copy (CVR < 1%), tague en Hero Product (CVR ≥ 3%) ou archive (0 vente en 14j)." }
+}

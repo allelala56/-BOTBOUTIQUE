@@ -1,0 +1,257 @@
+{% comment %}
+  Section : Hero vidéo plein écran
+  Usage : Home page, premier module
+{% endcomment %}
+
+<section class="hero" aria-label="Section hero">
+  <!-- Vidéo de fond loop -->
+  {%- if section.settings.video_url != blank -%}
+    <video
+      class="hero__video-bg"
+      autoplay
+      muted
+      loop
+      playsinline
+      preload="none"
+      aria-hidden="true"
+    >
+      <source src="{{ section.settings.video_url }}" type="video/mp4">
+    </video>
+  {%- elsif section.settings.bg_image != blank -%}
+    {{
+      section.settings.bg_image
+      | image_url: width: 1920
+      | image_tag:
+          class: 'hero__video-bg',
+          loading: 'eager',
+          fetchpriority: 'high',
+          alt: ''
+    }}
+  {%- endif -%}
+
+  <div class="hero__overlay" aria-hidden="true"></div>
+
+  <div class="container">
+    <div class="hero__content">
+      <!-- Eyebrow badge -->
+      {%- if section.settings.eyebrow != blank -%}
+        <div class="hero__eyebrow" data-reveal data-reveal-delay="0">
+          {{ section.settings.eyebrow }}
+        </div>
+      {%- endif -%}
+
+      <!-- Titre principal -->
+      <h1 class="hero__title" data-reveal data-reveal-delay="80">
+        {%- if section.settings.title_line1 != blank -%}
+          {{ section.settings.title_line1 }}<br>
+        {%- endif -%}
+        {%- if section.settings.title_highlighted != blank -%}
+          <span class="text-gradient">{{ section.settings.title_highlighted }}</span>
+        {%- endif -%}
+        {%- if section.settings.typewriter_words != blank -%}
+          <br><span
+            data-typewriter="{{ section.settings.typewriter_words }}"
+            style="color: var(--color-primary);"
+          >{{ section.settings.typewriter_words | split: '|' | first }}</span>
+        {%- endif -%}
+      </h1>
+
+      <!-- Sous-titre -->
+      {%- if section.settings.subtitle != blank -%}
+        <p class="hero__subtitle" data-reveal data-reveal-delay="160">
+          {{ section.settings.subtitle }}
+        </p>
+      {%- endif -%}
+
+      <!-- CTA -->
+      <div class="hero__actions" data-reveal data-reveal-delay="240">
+        {%- if section.settings.cta_primary_text != blank -%}
+          <a
+            href="{{ section.settings.cta_primary_url | default: routes.collections_url }}"
+            class="btn btn-primary btn-lg btn-primary-pulse"
+          >
+            {{ section.settings.cta_primary_text }}
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+              <line x1="5" y1="12" x2="19" y2="12"/>
+              <polyline points="12 5 19 12 12 19"/>
+            </svg>
+          </a>
+        {%- endif -%}
+
+        {%- if section.settings.cta_secondary_text != blank -%}
+          <button
+            type="button"
+            class="btn btn-ghost btn-lg"
+            data-video-modal="{{ section.settings.video_modal_url }}"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <circle cx="12" cy="12" r="10"/>
+              <polygon points="10 8 16 12 10 16 10 8" fill="currentColor" stroke="none"/>
+            </svg>
+            {{ section.settings.cta_secondary_text }}
+          </button>
+        {%- endif -%}
+      </div>
+
+      <!-- Trust indicators -->
+      <div class="hero__trust" data-reveal data-reveal-delay="320">
+        {%- if section.settings.trust_1 != blank -%}
+          <div class="hero__trust-item">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+            {{ section.settings.trust_1 }}
+          </div>
+        {%- endif -%}
+        {%- if section.settings.trust_2 != blank -%}
+          <div class="hero__trust-item">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+            {{ section.settings.trust_2 }}
+          </div>
+        {%- endif -%}
+        {%- if section.settings.trust_3 != blank -%}
+          <div class="hero__trust-item">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+            {{ section.settings.trust_3 }}
+          </div>
+        {%- endif -%}
+      </div>
+    </div>
+  </div>
+
+  <!-- Scroll indicator -->
+  <div
+    class="hero__scroll-hint"
+    aria-hidden="true"
+    style="position:absolute;bottom:2rem;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:0.5rem;color:var(--color-text-muted);font-size:0.75rem;letter-spacing:0.1em;text-transform:uppercase;opacity:0.6;"
+  >
+    <span>Défiler</span>
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="animation:bounceY 1.5s ease-in-out infinite;">
+      <polyline points="6 9 12 15 18 9"/>
+    </svg>
+  </div>
+</section>
+
+<style>
+  @keyframes bounceY {
+    0%,100% { transform: translateY(0); }
+    50%      { transform: translateY(6px); }
+  }
+</style>
+
+{% schema %}
+{
+  "name": "Hero — Vidéo plein écran",
+  "tag": "section",
+  "class": "hero-section",
+  "settings": [
+    {
+      "type": "header",
+      "content": "Contenu"
+    },
+    {
+      "type": "text",
+      "id": "eyebrow",
+      "label": "Badge eyebrow",
+      "default": "🔥 Trending maintenant"
+    },
+    {
+      "type": "text",
+      "id": "title_line1",
+      "label": "Titre — ligne 1",
+      "default": "Les produits qui font"
+    },
+    {
+      "type": "text",
+      "id": "title_highlighted",
+      "label": "Titre — mot(s) en dégradé",
+      "default": "vraiment la différence"
+    },
+    {
+      "type": "text",
+      "id": "typewriter_words",
+      "label": "Mots animés (séparés par |)",
+      "info": "Ex: livrés en 7 jours|garantis 30 jours|testés par des milliers",
+      "default": "livrés en 7 jours|garantis 30 jours|testés par des milliers"
+    },
+    {
+      "type": "textarea",
+      "id": "subtitle",
+      "label": "Sous-titre",
+      "default": "Découvre notre sélection de produits viraux, sourcés pour toi parmi les meilleures tendances mondiales."
+    },
+    {
+      "type": "header",
+      "content": "CTAs"
+    },
+    {
+      "type": "text",
+      "id": "cta_primary_text",
+      "label": "CTA principal — texte",
+      "default": "Voir les produits"
+    },
+    {
+      "type": "url",
+      "id": "cta_primary_url",
+      "label": "CTA principal — lien"
+    },
+    {
+      "type": "text",
+      "id": "cta_secondary_text",
+      "label": "CTA secondaire — texte",
+      "default": "Voir la vidéo"
+    },
+    {
+      "type": "text",
+      "id": "video_modal_url",
+      "label": "URL vidéo modale (YouTube embed)"
+    },
+    {
+      "type": "header",
+      "content": "Badges de confiance"
+    },
+    {
+      "type": "text",
+      "id": "trust_1",
+      "label": "Trust badge 1",
+      "default": "Livraison 5–9 jours en Suisse"
+    },
+    {
+      "type": "text",
+      "id": "trust_2",
+      "label": "Trust badge 2",
+      "default": "Garantie 30 jours satisfait ou remboursé"
+    },
+    {
+      "type": "text",
+      "id": "trust_3",
+      "label": "Trust badge 3",
+      "default": "Paiement Twint, CB, PayPal"
+    },
+    {
+      "type": "header",
+      "content": "Médias"
+    },
+    {
+      "type": "text",
+      "id": "video_url",
+      "label": "URL vidéo de fond (.mp4)",
+      "info": "Hébergée sur CDN ou assets Shopify"
+    },
+    {
+      "type": "image_picker",
+      "id": "bg_image",
+      "label": "Image de fond (fallback si pas de vidéo)"
+    }
+  ],
+  "presets": [
+    {
+      "name": "Hero — Vidéo plein écran"
+    }
+  ]
+}
+{% endschema %}

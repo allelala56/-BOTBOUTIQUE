@@ -1,0 +1,21 @@
+{
+  "sections": {
+    "collection_header": {
+      "type": "collection-header",
+      "settings": {}
+    },
+    "product_grid": {
+      "type": "featured-products",
+      "settings": {
+        "columns_desktop": "4",
+        "products_to_show": 24,
+        "show_view_all": false
+      }
+    },
+    "trust_bar": {
+      "type": "trust-bar",
+      "settings": {}
+    }
+  },
+  "order": ["collection_header", "product_grid", "trust_bar"]
+}

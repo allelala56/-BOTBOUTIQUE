@@ -1,0 +1,75 @@
+{% comment %}
+  Snippet : product-card
+  Usage : {% render 'product-card', product: product, index: forloop.index0 %}
+{% endcomment %}
+
+{%- assign savings_pct = 0 -%}
+{%- if product.compare_at_price > product.price -%}
+  {%- assign savings_pct = product.compare_at_price | minus: product.price | times: 100 | divided_by: product.compare_at_price -%}
+{%- endif -%}
+{%- assign urgency = product.metafields.custom.urgency_text.value -%}
+{%- assign rev_count = product.metafields.judgeme.all_reviews_count.value | default: 0 -%}
+
+<article
+  class="card product-card"
+  data-tilt
+  role="listitem"
+  data-reveal
+  data-reveal-delay="{{ index | default: 0 | times: 80 }}"
+>
+  <!-- Image -->
+  <a href="{{ product.url }}" class="product-card__image-wrap" aria-label="{{ product.title | escape }}" tabindex="0">
+    {%- if product.featured_image -%}
+      {{
+        product.featured_image
+        | image_url: width: 600
+        | image_tag:
+            class: 'product-card__image',
+            loading: 'lazy',
+            alt: product.featured_image.alt | default: product.title | escape,
+            widths: '300,400,500,600'
+      }}
+    {%- else -%}
+      {{ 'product-1' | placeholder_svg_tag: 'product-card__image' }}
+    {%- endif -%}
+
+    {%- if urgency != blank -%}
+      <div class="product-card__badge product-card__badge--fire">🔥 {{ urgency }}</div>
+    {%- elsif savings_pct > 0 -%}
+      <div class="product-card__badge">-{{ savings_pct }}%</div>
+    {%- elsif product.metafields.custom.is_hero.value == 'true' -%}
+      <div class="product-card__badge product-card__badge--new">★ Hero</div>
+    {%- endif -%}
+  </a>
+
+  <!-- Body -->
+  <div class="product-card__body">
+    <h3 class="product-card__title">
+      <a href="{{ product.url }}">{{ product.title }}</a>
+    </h3>
+
+    {%- if rev_count > 0 -%}
+      <div class="flex items-center gap-sm" style="margin-bottom:0.4rem;">
+        {%- render 'stars-rating', rating: product.metafields.judgeme.all_reviews_rating.value -%}
+        <span style="font-size:0.8rem;color:var(--color-text-muted);">({{ rev_count }})</span>
+      </div>
+    {%- endif -%}
+
+    <div class="product-card__price">
+      <span class="product-card__price-current">{{ product.price | money }}</span>
+      {%- if product.compare_at_price > product.price -%}
+        <span class="product-card__price-compare">{{ product.compare_at_price | money }}</span>
+        <span class="product-card__price-save">-{{ savings_pct }}%</span>
+      {%- endif -%}
+    </div>
+
+    <div class="product-card__cta">
+      <a href="{{ product.url }}" class="btn btn-primary btn-full">
+        Voir le produit
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+          <line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>
+        </svg>
+      </a>
+    </div>
+  </div>
+</article>

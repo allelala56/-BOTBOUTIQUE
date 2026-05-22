@@ -1,0 +1,174 @@
+{
+  "name": "02 — Pricing Agent",
+  "nodes": [
+    {
+      "id": "webhook-trigger",
+      "name": "Webhook — Produit candidat reçu",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "parameters": {
+        "path": "pricing-agent",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "google-shopping",
+      "name": "Google Shopping — Prix concurrents",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [500, 180],
+      "parameters": {
+        "method": "GET",
+        "url": "https://serpapi.com/search",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "engine", "value": "google_shopping" },
+            { "name": "q", "value": "={{ $json.title }}" },
+            { "name": "gl", "value": "ch" },
+            { "name": "hl", "value": "fr" },
+            { "name": "api_key", "value": "={{ $credentials.serpApiKey }}" },
+            { "name": "num", "value": "20" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "amazon-prices",
+      "name": "Amazon — Prix & rang bestseller",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [500, 340],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.rainforestapi.com/request",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "api_key", "value": "={{ $credentials.rainforestApiKey }}" },
+            { "name": "type", "value": "search" },
+            { "name": "amazon_domain", "value": "amazon.fr" },
+            { "name": "search_term", "value": "={{ $json.title }}" },
+            { "name": "sort_by", "value": "featured" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "meta-ads-library",
+      "name": "Meta Ads Library — Pubs actives",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [500, 500],
+      "parameters": {
+        "method": "GET",
+        "url": "https://graph.facebook.com/v19.0/ads_archive",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "access_token", "value": "={{ $credentials.metaAccessToken }}" },
+            { "name": "ad_reached_countries", "value": "[\"FR\",\"CH\",\"BE\"]" },
+            { "name": "ad_type", "value": "ALL" },
+            { "name": "search_terms", "value": "={{ $json.title }}" },
+            { "name": "fields", "value": "id,ad_creation_time,ad_delivery_start_time,ad_snapshot_url,page_name,spend" },
+            { "name": "limit", "value": "50" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "compute-pricing",
+      "name": "Calculer la stratégie de prix",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [800, 340],
+      "parameters": {
+        "jsCode": "const productData = $('Webhook — Produit candidat reçu').first().json;\nconst googleResults = $('Google Shopping — Prix concurrents').first().json?.shopping_results || [];\nconst amazonResults = $('Amazon — Prix & rang bestseller').first().json?.search_results || [];\nconst metaAds = $('Meta Ads Library — Pubs actives').first().json?.data || [];\n\nconst supplierCost = productData.price_supplier || 0;\n\n// Extraire les prix concurrents\nconst allPrices = [\n  ...googleResults.map(r => parseFloat(r.price?.replace(/[^0-9.]/g, '') || 0)).filter(p => p > 0),\n  ...amazonResults.map(r => parseFloat(r.price?.value || 0)).filter(p => p > 0)\n];\n\nconst priceMin = allPrices.length ? Math.min(...allPrices) : supplierCost * 2;\nconst priceMax = allPrices.length ? Math.max(...allPrices) : supplierCost * 5;\nconst priceMed = allPrices.length ? allPrices.sort((a,b)=>a-b)[Math.floor(allPrices.length/2)] : supplierCost * 3;\n\n// Saturation via Meta Ads (nbr de pubs actives > 30j)\nconst adsOver30Days = metaAds.filter(ad => {\n  const start = new Date(ad.ad_delivery_start_time);\n  const diffDays = (Date.now() - start) / (1000 * 60 * 60 * 24);\n  return diffDays > 30;\n}).length;\n\nconst saturationLevel = adsOver30Days > 20 ? 'SATURE' : adsOver30Days > 8 ? 'CONCURRENTIEL' : 'VIERGE';\n\n// Multiplicateur dynamique\nconst multiplierMap = { VIERGE: 4.2, CONCURRENTIEL: 2.6, SATURE: 0 };\nconst multiplier = multiplierMap[saturationLevel];\n\nif (saturationLevel === 'SATURE') {\n  return [{ json: { ...productData, verdict_pricing: 'REJETE', raison: 'Marché saturé (>20 pubs actives)', saturation_level: saturationLevel } }];\n}\n\nconst targetPriceCHF = Math.round(supplierCost * multiplier * 10) / 10;\n// CPA estimé (benchmark Meta pour e-commerce FR/CH)\nconst estimatedCPA = saturationLevel === 'VIERGE' ? targetPriceCHF * 0.20 : targetPriceCHF * 0.28;\nconst shippingCost = 3.5;\nconst netMargin = targetPriceCHF - supplierCost - estimatedCPA - shippingCost;\nconst netMarginPct = (netMargin / targetPriceCHF) * 100;\n\nconst verdictPricing = netMarginPct >= 30 ? 'VALIDE' : 'REJETE';\n\nreturn [{\n  json: {\n    ...productData,\n    pricing: {\n      supplier_cost: supplierCost,\n      price_min_market: priceMin,\n      price_max_market: priceMax,\n      price_median_market: priceMed,\n      target_price_chf: targetPriceCHF,\n      crossed_price_chf: Math.round(priceMed * 1.15 * 10) / 10,\n      multiplier,\n      estimated_cpa: estimatedCPA,\n      net_margin_chf: netMargin,\n      net_margin_pct: Math.round(netMarginPct * 10) / 10,\n      saturation_level: saturationLevel,\n      active_ads_30d: adsOver30Days\n    },\n    verdict_pricing: verdictPricing,\n    raison_pricing: verdictPricing === 'VALIDE'\n      ? `Marge nette ${Math.round(netMarginPct)}% — marché ${saturationLevel}`\n      : `Marge insuffisante (${Math.round(netMarginPct)}% < 30%)`\n  }\n}];"
+      }
+    },
+    {
+      "id": "filter-margin",
+      "name": "Filter — Marge nette ≥ 30%",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2,
+      "position": [1060, 340],
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{ $json.verdict_pricing }}",
+              "rightValue": "VALIDE",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "update-airtable",
+      "name": "Airtable — Mettre à jour avec pricing",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2,
+      "position": [1320, 340],
+      "parameters": {
+        "operation": "update",
+        "baseId": "={{ $credentials.airtableBaseId }}",
+        "tableId": "tblProductCandidates",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Prix_vente_CHF": "={{ $json.pricing.target_price_chf }}",
+            "Prix_barre_CHF": "={{ $json.pricing.crossed_price_chf }}",
+            "Marge_nette_pct": "={{ $json.pricing.net_margin_pct }}",
+            "Saturation": "={{ $json.pricing.saturation_level }}",
+            "Status": "Pricing OK — En attente sourcing"
+          }
+        }
+      }
+    },
+    {
+      "id": "trigger-sourcing",
+      "name": "Déclencher Sourcing Agent",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [1580, 340],
+      "parameters": {
+        "workflowId": "={{ $workflow.id_sourcing_agent }}",
+        "source": "database"
+      }
+    }
+  ],
+  "connections": {
+    "Webhook — Produit candidat reçu": {
+      "main": [[
+        { "node": "Google Shopping — Prix concurrents", "type": "main", "index": 0 },
+        { "node": "Amazon — Prix & rang bestseller", "type": "main", "index": 0 },
+        { "node": "Meta Ads Library — Pubs actives", "type": "main", "index": 0 }
+      ]]
+    },
+    "Google Shopping — Prix concurrents": {
+      "main": [[{ "node": "Calculer la stratégie de prix", "type": "main", "index": 0 }]]
+    },
+    "Amazon — Prix & rang bestseller": {
+      "main": [[{ "node": "Calculer la stratégie de prix", "type": "main", "index": 1 }]]
+    },
+    "Meta Ads Library — Pubs actives": {
+      "main": [[{ "node": "Calculer la stratégie de prix", "type": "main", "index": 2 }]]
+    },
+    "Calculer la stratégie de prix": {
+      "main": [[{ "node": "Filter — Marge nette ≥ 30%", "type": "main", "index": 0 }]]
+    },
+    "Filter — Marge nette ≥ 30%": {
+      "main": [[{ "node": "Airtable — Mettre à jour avec pricing", "type": "main", "index": 0 }]]
+    },
+    "Airtable — Mettre à jour avec pricing": {
+      "main": [[{ "node": "Déclencher Sourcing Agent", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": true,
+  "settings": { "executionOrder": "v1" },
+  "meta": { "description": "Analyse la concurrence (Google Shopping, Amazon, Meta Ads Library) et calcule le prix de vente optimal. Rejette si marge nette projetée < 30%." }
+}
