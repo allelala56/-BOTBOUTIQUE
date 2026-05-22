@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="{{ request.locale.iso_code }}" dir="ltr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0A0A0F">
+
+  {%- if page_description -%}
+    <meta name="description" content="{{ page_description | escape }}">
+  {%- endif -%}
+
+  {%- if settings.favicon != blank -%}
+    <link rel="icon" type="image/png" href="{{ settings.favicon | image_url: width: 32 }}">
+  {%- endif -%}
+
+  <title>
+    {{ page_title }}{% if current_tags %} &ndash; tagged "{{ current_tags | join: ', ' }}"{% endif %}
+    {% if current_page != 1 %} &ndash; Page {{ current_page }}{% endif %}
+    {% unless page_title contains shop.name %} &ndash; {{ shop.name }}{% endunless %}
+  </title>
+
+  <!-- Canonical -->
+  <link rel="canonical" href="{{ canonical_url }}">
+
+  <!-- Préconnexions fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+
+  <!-- CSS -->
+  {{ 'global.css' | asset_url | stylesheet_tag }}
+
+  <!-- Shopify requis -->
+  {{ content_for_header }}
+
+  <!-- Open Graph / SEO -->
+  <meta property="og:site_name"   content="{{ shop.name }}">
+  <meta property="og:type"        content="website">
+  <meta property="og:title"       content="{{ page_title | escape }}">
+  <meta property="og:description" content="{{ page_description | default: shop.description | escape }}">
+  {%- if page_image -%}
+    <meta property="og:image" content="https:{{ page_image | image_url: width: 1200 }}">
+  {%- endif -%}
+
+  <!-- Schema.org Organisation -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    "name": {{ shop.name | json }},
+    "url": {{ shop.url | json }},
+    "description": {{ shop.description | json }}
+  }
+  </script>
+
+  <!-- Barre de progression scroll -->
+  <div id="scroll-progress"></div>
+</head>
+
+<body class="template-{{ template.name }}">
+
+  <!-- Curseur custom (desktop) -->
+  <script src="{{ 'cursor.js' | asset_url }}" defer></script>
+
+  <!-- Barre d'annonce -->
+  {%- if settings.announcement_text != blank -%}
+    <div class="announcement-bar" role="complementary">
+      <div class="announcement-bar__ticker">
+        {{ settings.announcement_text }}
+        &nbsp;&nbsp;⚡&nbsp;&nbsp;
+        {{ settings.announcement_text }}
+      </div>
+    </div>
+  {%- endif -%}
+
+  <!-- Header -->
+  <header class="site-header" role="banner">
+    <div class="site-header__inner">
+      <!-- Logo -->
+      <a href="{{ routes.root_url }}" class="site-logo" aria-label="{{ shop.name }}">
+        {%- if settings.logo != blank -%}
+          {{ settings.logo | image_url: width: 160 | image_tag: loading: 'eager', alt: shop.name }}
+        {%- else -%}
+          {{ shop.name }}
+        {%- endif -%}
+      </a>
+
+      <!-- Navigation principale -->
+      <nav class="site-nav" role="navigation" aria-label="Navigation principale">
+        {%- for link in linklists.main-menu.links -%}
+          <a href="{{ link.url }}"
+             {% if link.active %}aria-current="page"{% endif %}>
+            {{ link.title }}
+          </a>
+        {%- endfor -%}
+      </nav>
+
+      <!-- Actions droite -->
+      <div class="flex items-center gap-md">
+        <!-- Recherche -->
+        <button type="button" aria-label="Rechercher" class="icon-btn">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+        </button>
+
+        <!-- Panier -->
+        <a href="{{ routes.cart_url }}" class="cart-icon" aria-label="Panier ({{ cart.item_count }} articles)">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/>
+            <line x1="3" y1="6" x2="21" y2="6"/>
+            <path d="M16 10a4 4 0 01-8 0"/>
+          </svg>
+          {%- if cart.item_count > 0 -%}
+            <span class="cart-count">{{ cart.item_count }}</span>
+          {%- endif -%}
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Contenu principal -->
+  <main id="main-content" role="main" tabindex="-1">
+    {{ content_for_layout }}
+  </main>
+
+  <!-- Footer -->
+  <footer class="site-footer" role="contentinfo">
+    <div class="container">
+      <div class="site-footer__grid">
+        <!-- Colonne marque -->
+        <div class="footer-brand">
+          <a href="{{ routes.root_url }}" class="site-logo">{{ shop.name }}</a>
+          <p class="footer-brand__tagline">{{ settings.footer_tagline | default: "Produits tendance livrés directement chez toi." }}</p>
+          <!-- Réseaux sociaux -->
+          <div class="flex gap-md">
+            {%- if settings.social_tiktok != blank -%}
+              <a href="{{ settings.social_tiktok }}" target="_blank" rel="noopener" aria-label="TikTok">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-2.88 2.5 2.89 2.89 0 01-2.89-2.89 2.89 2.89 0 012.89-2.89c.28 0 .54.04.79.1V9.01a6.33 6.33 0 00-.79-.05 6.34 6.34 0 00-6.34 6.34 6.34 6.34 0 006.34 6.34 6.34 6.34 0 006.33-6.34V8.82a8.27 8.27 0 004.83 1.54V6.91a4.85 4.85 0 01-1.06-.22z"/></svg>
+              </a>
+            {%- endif -%}
+            {%- if settings.social_instagram != blank -%}
+              <a href="{{ settings.social_instagram }}" target="_blank" rel="noopener" aria-label="Instagram">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1112.63 8 4 4 0 0116 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg>
+              </a>
+            {%- endif -%}
+          </div>
+        </div>
+
+        <!-- Liens rapides -->
+        <div>
+          <p class="footer-col__title">Boutique</p>
+          <ul class="footer-col__links">
+            {%- for link in linklists.footer.links -%}
+              <li><a href="{{ link.url }}">{{ link.title }}</a></li>
+            {%- endfor -%}
+          </ul>
+        </div>
+
+        <!-- Aide -->
+        <div>
+          <p class="footer-col__title">Aide</p>
+          <ul class="footer-col__links">
+            <li><a href="/pages/livraison">Livraison</a></li>
+            <li><a href="/pages/retours">Retours & échanges</a></li>
+            <li><a href="/pages/faq">FAQ</a></li>
+            <li><a href="/pages/contact">Contact</a></li>
+          </ul>
+        </div>
+
+        <!-- Newsletter -->
+        <div>
+          <p class="footer-col__title">Newsletter</p>
+          <p style="color: var(--color-text-muted); font-size: 0.9rem; margin-bottom: 1rem;">
+            Nouveautés en avant-première + {{ settings.newsletter_incentive | default: '-10% sur ta première commande' }}.
+          </p>
+          {%- form 'customer', class: 'newsletter-form' -%}
+            <input type="hidden" name="contact[tags]" value="newsletter">
+            <input
+              type="email"
+              name="contact[email]"
+              class="newsletter-input"
+              placeholder="ton@email.ch"
+              required
+              aria-label="Adresse email"
+            >
+            <button type="submit" class="btn btn-primary">OK</button>
+          {%- endform -%}
+        </div>
+      </div>
+
+      <!-- Footer bottom -->
+      <div class="site-footer__bottom">
+        <p>© {{ 'now' | date: '%Y' }} {{ shop.name }}. Tous droits réservés.</p>
+        <div class="flex gap-md flex-wrap">
+          <a href="/policies/privacy-policy">Confidentialité</a>
+          <a href="/policies/terms-of-service">CGV</a>
+          <a href="/policies/refund-policy">Retours</a>
+          <a href="/policies/legal-notice">Mentions légales</a>
+        </div>
+        <!-- Logos paiement -->
+        <div class="flex gap-sm items-center" aria-label="Moyens de paiement acceptés">
+          <img src="{{ 'payment-visa.svg' | asset_url }}" alt="Visa" height="20" loading="lazy">
+          <img src="{{ 'payment-mastercard.svg' | asset_url }}" alt="Mastercard" height="20" loading="lazy">
+          <img src="{{ 'payment-twint.svg' | asset_url }}" alt="Twint" height="20" loading="lazy">
+          <img src="{{ 'payment-paypal.svg' | asset_url }}" alt="PayPal" height="20" loading="lazy">
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Scripts -->
+  <script src="{{ 'animations.js' | asset_url }}" defer></script>
+
+  <!-- Klaviyo / Judge.me placeholders (activer dans Theme Settings) -->
+  {%- if settings.klaviyo_company_id != blank -%}
+    <script async type="text/javascript" src="https://static.klaviyo.com/onsite/js/klaviyo.js?company_id={{ settings.klaviyo_company_id }}"></script>
+  {%- endif -%}
+
+</body>
+</html>

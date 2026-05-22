@@ -1,0 +1,264 @@
+{% comment %}
+  Section : Page produit — Layout sticky gallery + infos
+  Inclut : galerie HD, prix barré, variantes, quantité, CTA néon pulsant,
+           badges de confiance, sticky bar mobile
+{% endcomment %}
+
+{%- assign product = product -%}
+{%- assign selected_variant = product.selected_or_first_available_variant -%}
+{%- assign urgency   = product.metafields.custom.urgency_text.value -%}
+{%- assign guarantee = product.metafields.custom.guarantee_text.value -%}
+{%- assign shipping  = product.metafields.custom.shipping_eta_ch.value -%}
+{%- assign hook      = product.metafields.custom.hook.value -%}
+{%- assign is_hero   = product.metafields.custom.is_hero.value -%}
+
+<div class="container">
+  <div class="product-layout">
+
+    <!-- Galerie produit -->
+    <div class="product-gallery" aria-label="Galerie du produit">
+
+      <!-- Image principale -->
+      <div class="product-gallery__main">
+        <img
+          id="product-main-img"
+          src="{{ product.featured_image | image_url: width: 900 }}"
+          alt="{{ product.featured_image.alt | default: product.title | escape }}"
+          loading="eager"
+          fetchpriority="high"
+          width="900"
+          height="900"
+        >
+      </div>
+
+      <!-- Thumbnails -->
+      {%- if product.images.size > 1 -%}
+        <div class="product-gallery__thumbs" role="list" aria-label="Vignettes produit">
+          {%- for image in product.images -%}
+            <button
+              class="product-gallery__thumb {% if forloop.first %}active{% endif %}"
+              role="listitem"
+              aria-label="Image {{ forloop.index }}"
+              data-src="{{ image | image_url: width: 900 }}"
+              onclick="
+                document.getElementById('product-main-img').src = this.dataset.src;
+                document.querySelectorAll('.product-gallery__thumb').forEach(t => t.classList.remove('active'));
+                this.classList.add('active');
+              "
+            >
+              {{
+                image
+                | image_url: width: 150
+                | image_tag:
+                    loading: 'lazy',
+                    alt: image.alt | default: product.title | escape
+              }}
+            </button>
+          {%- endfor -%}
+        </div>
+      {%- endif -%}
+    </div>
+
+    <!-- Informations produit -->
+    <div class="product-info">
+
+      <!-- Accroche hook (metafield) -->
+      {%- if hook != blank -%}
+        <p style="font-family:var(--font-mono);font-size:0.875rem;color:var(--color-primary);letter-spacing:0.04em;margin-bottom:0.75rem;">
+          {{ hook }}
+        </p>
+      {%- endif -%}
+
+      <!-- Titre -->
+      <h1 style="font-size:clamp(1.5rem,3vw,2rem);margin-bottom:0.75rem;">{{ product.title }}</h1>
+
+      <!-- Étoiles + nb d'avis -->
+      {%- assign rev_count = product.metafields.judgeme.all_reviews_count.value | default: 0 -%}
+      {%- assign rev_rating = product.metafields.judgeme.all_reviews_rating.value | default: 5.0 -%}
+      <div class="product-info__rating">
+        <span class="stars" aria-label="{{ rev_rating }} étoiles sur 5">
+          {%- assign full_stars = rev_rating | floor -%}
+          {%- for i in (1..5) -%}
+            <span style="color:{% if i <= full_stars %}#FFB800{% else %}rgba(255,184,0,0.25){% endif %};">★</span>
+          {%- endfor -%}
+        </span>
+        {%- if rev_count > 0 -%}
+          <a href="#reviews" style="font-size:0.875rem;color:var(--color-text-muted);">
+            {{ rev_count }} avis vérifiés
+          </a>
+        {%- endif -%}
+      </div>
+
+      <!-- Urgence -->
+      {%- if urgency != blank -%}
+        <div class="urgency-badge" style="margin-bottom:1rem;">
+          {{ urgency }}
+        </div>
+      {%- endif -%}
+
+      <!-- Prix -->
+      <div class="product-info__price-block">
+        <span class="product-info__price">
+          {{ selected_variant.price | money }}
+        </span>
+        {%- if selected_variant.compare_at_price > selected_variant.price -%}
+          <span class="product-info__price-compare" aria-label="Prix original">
+            {{ selected_variant.compare_at_price | money }}
+          </span>
+          {%- assign savings = selected_variant.compare_at_price | minus: selected_variant.price | times: 100 | divided_by: selected_variant.compare_at_price -%}
+          <span class="product-info__price-save">-{{ savings }}%</span>
+        {%- endif -%}
+      </div>
+
+      <!-- Formulaire d'achat -->
+      {%- form 'product', product, id: 'product-form', novalidate: true -%}
+        <input type="hidden" name="id" value="{{ selected_variant.id }}">
+
+        <!-- Variantes -->
+        {%- unless product.has_only_default_variant -%}
+          {%- for option in product.options_with_values -%}
+            <div class="product-info__variants">
+              <p class="variant-label">{{ option.name }}</p>
+              <div class="variant-pills" role="group" aria-label="{{ option.name }}">
+                {%- for value in option.values -%}
+                  <button
+                    type="button"
+                    class="variant-pill {% if option.selected_value == value %}selected{% endif %}"
+                    aria-pressed="{{ option.selected_value == value }}"
+                    onclick="
+                      this.closest('.variant-pills').querySelectorAll('.variant-pill').forEach(p => { p.classList.remove('selected'); p.setAttribute('aria-pressed','false'); });
+                      this.classList.add('selected');
+                      this.setAttribute('aria-pressed','true');
+                    "
+                    data-option="{{ option.name }}"
+                    data-value="{{ value | escape }}"
+                  >
+                    {{ value }}
+                  </button>
+                {%- endfor -%}
+              </div>
+            </div>
+          {%- endfor -%}
+        {%- endunless -%}
+
+        <!-- Quantité -->
+        <div class="quantity-selector" aria-label="Quantité">
+          <button type="button" class="quantity-btn" data-qty-minus aria-label="Réduire la quantité">−</button>
+          <input
+            type="number"
+            name="quantity"
+            class="quantity-input"
+            value="1"
+            min="1"
+            aria-label="Quantité"
+          >
+          <button type="button" class="quantity-btn" data-qty-plus aria-label="Augmenter la quantité">+</button>
+        </div>
+
+        <!-- CTA Ajouter au panier -->
+        <button
+          type="submit"
+          class="btn btn-primary btn-lg btn-full btn-primary-pulse"
+          data-add-to-cart
+          {% unless selected_variant.available %}disabled{% endunless %}
+          aria-label="Ajouter {{ product.title | escape }} au panier"
+        >
+          {%- if selected_variant.available -%}
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+              <path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/>
+              <line x1="3" y1="6" x2="21" y2="6"/>
+              <path d="M16 10a4 4 0 01-8 0"/>
+            </svg>
+            Ajouter au panier
+          {%- else -%}
+            Rupture de stock
+          {%- endif -%}
+        </button>
+
+        <!-- Achat direct -->
+        {%- if section.settings.show_buy_now -%}
+          {{- form | payment_button -}}
+        {%- endif -%}
+
+      {%- endform -%}
+
+      <!-- Garanties -->
+      <div class="product-info__guarantees" aria-label="Garanties et infos livraison">
+        {%- if shipping != blank -%}
+          <div class="guarantee-item">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+              <rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/>
+            </svg>
+            {{ shipping }}
+          </div>
+        {%- endif -%}
+        {%- if guarantee != blank -%}
+          <div class="guarantee-item">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+            </svg>
+            {{ guarantee }}
+          </div>
+        {%- endif -%}
+        <div class="guarantee-item">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+            <rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/>
+          </svg>
+          Paiement sécurisé — Twint, CB, PayPal
+        </div>
+      </div>
+
+    </div><!-- /product-info -->
+  </div><!-- /product-layout -->
+
+  <!-- Description complète -->
+  <div class="section-sm" style="max-width:780px;">
+    <div class="product-description" style="color:var(--color-text-muted);line-height:1.75;">
+      {{ product.description }}
+    </div>
+  </div>
+
+  <!-- Reviews Judge.me -->
+  <div id="reviews" class="section-sm">
+    <div class="section-header">
+      <span class="section-header__eyebrow">Avis clients</span>
+      <h2 class="section-header__title">Ce qu'ils en pensent</h2>
+    </div>
+    <div id="judgeme_product_reviews" class="jdgm-widget jdgm-review-widget" data-id="{{ product.id }}"></div>
+  </div>
+
+</div>
+
+<!-- Sticky buy bar (mobile) -->
+<div class="sticky-buy-bar" aria-label="Achat rapide">
+  <div>
+    <div class="sticky-buy-bar__price">{{ selected_variant.price | money }}</div>
+    {%- if selected_variant.compare_at_price > selected_variant.price -%}
+      <div style="font-size:0.75rem;color:var(--color-text-muted);text-decoration:line-through;">
+        {{ selected_variant.compare_at_price | money }}
+      </div>
+    {%- endif -%}
+  </div>
+  <button
+    type="button"
+    class="btn btn-primary btn-primary-pulse"
+    onclick="document.getElementById('product-form').querySelector('[data-add-to-cart]').click()"
+    aria-label="Ajouter au panier"
+  >
+    Ajouter au panier
+  </button>
+</div>
+
+{% schema %}
+{
+  "name": "Produit — Template",
+  "settings": [
+    {
+      "type": "checkbox",
+      "id": "show_buy_now",
+      "label": "Afficher le bouton Acheter maintenant",
+      "default": true
+    }
+  ]
+}
+{% endschema %}
